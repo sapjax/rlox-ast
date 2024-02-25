@@ -1,66 +1,5 @@
-#![allow(non_camel_case_types)]
-
+use crate::token::{map_keyword, Kind, Token};
 use std::str::Chars;
-use thiserror::Error;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Token {
-    pub kind: Kind,
-    pub start: usize,
-    pub end: usize,
-    pub line: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Kind {
-    // Single-character tokens.
-    LEFT_PAREN,
-    RIGHT_PAREN,
-    LEFT_BRACE,
-    RIGHT_BRACE,
-    COMMA,
-    DOT,
-    MINUS,
-    PLUS,
-    SEMICOLON,
-    SLASH,
-    STAR,
-
-    // One or two character tokens.
-    BANG,
-    BANG_EQUAL,
-    EQUAL,
-    EQUAL_EQUAL,
-    GREATER,
-    GREATER_EQUAL,
-    LESS,
-    LESS_EQUAL,
-
-    // Literals.
-    IDENTIFIER,
-    STRING,
-    NUMBER,
-
-    // Keywords.
-    AND,
-    CLASS,
-    ELSE,
-    FALSE,
-    FUN,
-    FOR,
-    IF,
-    NIL,
-    OR,
-    PRINT,
-    RETURN,
-    SUPER,
-    THIS,
-    TRUE,
-    VAR,
-    WHILE,
-
-    EOF,
-}
 
 pub struct Lexer<'a> {
     /// Source Text
@@ -76,7 +15,7 @@ pub struct Lexer<'a> {
     line: usize,
     pub had_error: bool,
 
-    tokens: Vec<Token>,
+    pub tokens: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
@@ -192,35 +131,13 @@ impl<'a> Lexer<'a> {
         self.add_token(Kind::NUMBER);
     }
 
-    fn map_keyword(&self, text: &str) -> Kind {
-        match text {
-            "and" => Kind::AND,
-            "class" => Kind::CLASS,
-            "else" => Kind::ELSE,
-            "false" => Kind::FALSE,
-            "for" => Kind::FOR,
-            "fun" => Kind::FUN,
-            "if" => Kind::IF,
-            "nil" => Kind::NIL,
-            "or" => Kind::OR,
-            "print" => Kind::PRINT,
-            "return" => Kind::RETURN,
-            "super" => Kind::SUPER,
-            "this" => Kind::THIS,
-            "true" => Kind::TRUE,
-            "var" => Kind::VAR,
-            "while" => Kind::WHILE,
-            _ => Kind::IDENTIFIER,
-        }
-    }
-
     fn identifier(&mut self) {
         while self.peek().is_alphanumeric() || self.peek() == '_' {
             self.advance();
         }
 
         let text = &self.source[self.start..self.current];
-        self.add_token(self.map_keyword(text));
+        self.add_token(map_keyword(text));
     }
 
     fn string(&mut self) {
@@ -256,9 +173,8 @@ impl<'a> Lexer<'a> {
     fn add_token(&mut self, kind: Kind) {
         let token = Token {
             kind: kind,
-            start: self.start,
-            end: self.current,
             line: self.line,
+            lexeme: String::from(&self.source[self.start..self.current]),
         };
         self.tokens.push(token);
     }
@@ -282,17 +198,3 @@ impl<'a> Lexer<'a> {
         chars.next().unwrap_or('\0')
     }
 }
-
-#[derive(Debug, Error)]
-pub enum SyntaxError {
-    #[error("Unexpected Token")]
-    UnexpectedToken,
-
-    #[error("Expected a semicolon or an implicit semicolon after a statement, but found none")]
-    AutoSemicolonInsertion,
-
-    #[error("Unterminated multi-line comment")]
-    UnterminatedMultiLineComment,
-}
-
-pub type Result<T> = std::result::Result<T, SyntaxError>;

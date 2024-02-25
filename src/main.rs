@@ -3,7 +3,10 @@ use std::env;
 use std::fs;
 use std::process;
 
-pub mod lexer;
+mod ast;
+mod lexer;
+mod parser;
+mod token;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -39,8 +42,8 @@ fn run_repl() {
 fn run(source: &str) -> bool {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.scan_tokens();
-    for token in tokens {
-        println!("{:?}", token);
-    }
+    let mut parser = parser::Parser::new(tokens);
+    let expr = parser.parse();
+    println!("{}", expr);
     lexer.had_error
 }
