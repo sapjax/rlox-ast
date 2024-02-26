@@ -15,26 +15,12 @@ primary        → NUMBER | STRING | "true" | "false" | "nil"
 */
 
 use crate::ast::{
-    BinaryExpression, Expr, GroupingExpression, LiteralExpression, LiteralValue, UnaryExpression,
+    BinaryExpression, Expr, GroupingExpression, LiteralExpression, Object, UnaryExpression,
 };
-use crate::reporter::Reporter;
+use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
-use miette::Diagnostic;
-use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, ParseError>;
-
-#[derive(Debug, Error, Diagnostic)]
-#[error("{message:?}")]
-pub struct ParseError {
-    pub message: String,
-}
-
-impl ParseError {
-    pub fn new(message: String) -> Self {
-        Self { message }
-    }
-}
+pub type Result<T> = std::result::Result<T, SyntaxError>;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -136,29 +122,29 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr> {
         if self._match(&[Kind::FALSE]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: LiteralValue::FALSE(false),
+                value: Object::BOOL(false),
             })));
         }
         if self._match(&[Kind::TRUE]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: LiteralValue::TRUE(true),
+                value: Object::BOOL(true),
             })));
         }
         if self._match(&[Kind::NIL]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: LiteralValue::NIL(()),
+                value: Object::NIL(()),
             })));
         }
 
         if self._match(&[Kind::NUMBER]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: LiteralValue::NUMBER(self.previous().lexeme.parse::<f64>().unwrap()),
+                value: Object::NUMBER(self.previous().lexeme.parse::<f64>().unwrap()),
             })));
         }
 
         if self._match(&[Kind::STRING]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: LiteralValue::STRING(self.previous().lexeme),
+                value: Object::STRING(self.previous().lexeme),
             })));
         }
 
@@ -183,9 +169,9 @@ impl Parser {
         // panic!("{}", message.to_string());
     }
 
-    fn error(&mut self, token: Token, message: &str) -> ParseError {
+    fn error(&mut self, token: Token, message: &str) -> SyntaxError {
         self.reporter.error_token(&token, message);
-        ParseError::new(message.to_string())
+        SyntaxError::ParserError(message.to_string())
     }
 
     fn synchronize(&mut self) {

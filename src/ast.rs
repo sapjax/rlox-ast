@@ -64,27 +64,25 @@ pub struct GroupingExpression {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum LiteralValue {
-    TRUE(bool),
-    FALSE(bool),
+pub enum Object {
+    BOOL(bool),
     STRING(String),
     NUMBER(f64),
     NIL(()),
 }
 
-impl std::fmt::Display for LiteralValue {
+impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LiteralValue::TRUE(value) => write!(f, "{}", value),
-            LiteralValue::FALSE(value) => write!(f, "{}", value),
-            LiteralValue::STRING(value) => write!(f, "{}", value),
-            LiteralValue::NUMBER(value) => write!(f, "{}", value),
-            LiteralValue::NIL(_) => write!(f, "nil"),
+            Object::BOOL(value) => write!(f, "{}", value),
+            Object::STRING(value) => write!(f, "{}", value),
+            Object::NUMBER(value) => write!(f, "{}", value),
+            Object::NIL(_) => write!(f, "nil"),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct LiteralExpression {
-    pub value: LiteralValue,
+    pub value: Object,
 }

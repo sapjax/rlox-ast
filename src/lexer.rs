@@ -102,8 +102,7 @@ impl<'a> Lexer<'a> {
                 } else if c.is_alphabetic() || c == '_' {
                     self.identifier();
                 } else {
-                    self.reporter
-                        .error(self.line, "lexer: unexpected character")
+                    self.reporter.error(self.line, "unexpected character")
                 }
             }
         }

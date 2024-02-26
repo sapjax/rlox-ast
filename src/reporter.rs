@@ -1,4 +1,16 @@
 use crate::token::{Kind, Token};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum SyntaxError {
+    #[error("lexer error: {0}")]
+    LexerError(String),
+    #[error("parser error: {0}")]
+    ParserError(String),
+    #[error("runtime error: {0}")]
+    RuntimeError(String),
+}
+
 pub struct Reporter {
     pub had_error: bool,
 }
