@@ -1,3 +1,4 @@
+use crate::reporter::Reporter;
 use crate::token::{map_keyword, Kind, Token};
 use std::str::Chars;
 
@@ -13,31 +14,22 @@ pub struct Lexer<'a> {
 
     /// The current line
     line: usize,
-    pub had_error: bool,
+    pub reporter: Reporter,
 
     pub tokens: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str, reporter: Reporter) -> Self {
         Self {
             source,
             chars: source.chars(),
             start: 0,
             current: 0,
             line: 1,
-            had_error: false,
+            reporter: reporter,
             tokens: Vec::new(),
         }
-    }
-
-    fn error(&mut self, line: usize, message: &str) {
-        self.report(line, "", message);
-    }
-
-    fn report(&mut self, line: usize, at: &str, message: &str) {
-        println!("Error: [line {}] Error {}: {}", line, at, message);
-        self.had_error = true;
     }
 
     pub fn scan_tokens(&mut self) -> Vec<Token> {
@@ -110,7 +102,8 @@ impl<'a> Lexer<'a> {
                 } else if c.is_alphabetic() || c == '_' {
                     self.identifier();
                 } else {
-                    self.error(self.line, "unexpected character")
+                    self.reporter
+                        .error(self.line, "lexer: unexpected character")
                 }
             }
         }
@@ -149,7 +142,7 @@ impl<'a> Lexer<'a> {
         }
 
         if self.is_at_end() {
-            self.error(self.line, "Unterminated string.");
+            self.reporter.error(self.line, "Unterminated string.");
             return;
         }
 
