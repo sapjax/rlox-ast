@@ -1,22 +1,27 @@
 use crate::{
     ast::{
         BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
-        PrintStatement, Stmt, UnaryExpression,
+        PrintStatement, Stmt, UnaryExpression, VarStatement, VariableExpression,
     },
     reporter::SyntaxError,
     token::{Kind, Token},
 };
+use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, SyntaxError>;
 
-pub struct Interpreter {}
+pub struct Interpreter {
+    environment: Environment,
+}
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            environment: Environment::new(),
+        }
     }
 
-    pub fn interpret(&self, statements: Vec<Stmt>) -> Result<()> {
+    pub fn interpret(&mut self, statements: Vec<Stmt>) -> Result<()> {
         // self.evaluate(expr)
         for statement in statements {
             self.execute(statement)?;
@@ -24,16 +29,27 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&self, stmt: Stmt) -> Result<()> {
+    fn execute(&mut self, stmt: Stmt) -> Result<()> {
         match stmt {
             Stmt::Print(print) => self.visit_print_stmt(*print),
             Stmt::Expression(expression) => self.visit_expression_stmt(*expression),
+            Stmt::Var(var) => self.visit_var_stmt(*var),
         }
     }
 
     fn visit_print_stmt(&self, stmt: PrintStatement) -> Result<()> {
         let value = self.evaluate(stmt.expression)?;
         println!("{}", value);
+        Ok(())
+    }
+
+    fn visit_var_stmt(&mut self, stmt: VarStatement) -> Result<()> {
+        let value = match stmt.initializer {
+            Some(expr) => self.evaluate(expr)?,
+            None => Object::NIL(()),
+        };
+
+        self.environment.define(stmt.name.lexeme, value);
         Ok(())
     }
 
@@ -61,6 +77,13 @@ impl Interpreter {
             },
             // Unreachable.
             _ => Ok(Object::NIL(())),
+        }
+    }
+
+    fn visit_var_expr(&self, expr: VariableExpression) -> Result<Object> {
+        match self.environment.get(&expr.name.lexeme) {
+            Some(value) => Ok(value.clone()),
+            None => Err(Self::runtime_error(expr.name, "Undefined variable")),
         }
     }
 
@@ -131,6 +154,7 @@ impl Interpreter {
             Expr::Grouping(grouping) => self.visit_grouping_expr(*grouping),
             Expr::Unary(unary) => self.visit_unary_expr(*unary),
             Expr::Binary(binary) => self.visit_binary_expr(*binary),
+            Expr::Variable(variable) => self.visit_var_expr(*variable),
         }
     }
 
@@ -140,5 +164,25 @@ impl Interpreter {
             Object::NIL(()) => false,
             _ => true,
         }
+    }
+}
+
+pub struct Environment {
+    values: HashMap<String, Object>,
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Self {
+            values: HashMap::new(),
+        }
+    }
+
+    pub fn define(&mut self, name: String, value: Object) {
+        self.values.insert(name, value);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Object> {
+        self.values.get(name)
     }
 }

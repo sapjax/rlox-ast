@@ -54,7 +54,7 @@ fn run(source: &str, is_repl: bool) {
     match statements {
         Ok(stmts) => {
             println!("{} {:?}", "==>".blue(), stmts); // TODO: print AST in S-expression format
-            let interpreter = interpreter::Interpreter::new();
+            let mut interpreter = interpreter::Interpreter::new();
             let value = interpreter.interpret(stmts);
             match value {
                 Ok(value) => {

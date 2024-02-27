@@ -1,7 +1,12 @@
 /*
 
 ==================== Grammar ====================
-program        → statement* EOF ;
+program        → declaration* EOF ;
+
+declaration    → varDecl
+               | statement ;
+
+varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
 statement      → exprStmt
                | printStmt ;
@@ -16,15 +21,17 @@ term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary
                | primary ;
-primary        → NUMBER | STRING | "true" | "false" | "nil"
-               | "(" expression ")" ;
+primary        → "true" | "false" | "nil"
+               | NUMBER | STRING
+               | "(" expression ")"
+               | IDENTIFIER ;
 ==================== Grammar ====================
 
 */
 
 use crate::ast::{
     BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
-    PrintStatement, Stmt, UnaryExpression,
+    PrintStatement, Stmt, UnaryExpression, VarStatement, VariableExpression,
 };
 use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
@@ -49,10 +56,38 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Vec<Stmt>> {
         let mut statements: Vec<Stmt> = Vec::new();
         while !self.is_at_end() {
-            statements.push(self.statement()?);
+            let r = self.declaration();
+            match r {
+                Ok(stmt) => statements.push(stmt),
+                Err(_) => self.synchronize(),
+            }
         }
 
         Ok(statements)
+    }
+
+    fn declaration(&mut self) -> Result<Stmt> {
+        if self._match(&[Kind::VAR]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt> {
+        let name = self.consume(Kind::IDENTIFIER, "Expect variable name.")?;
+
+        let initializer = if self._match(&[Kind::EQUAL]) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        self.consume(Kind::SEMICOLON, "Expect ';' after variable declaration.")?;
+        Ok(Stmt::Var(Box::new(VarStatement {
+            name: name,
+            initializer: initializer,
+        })))
     }
 
     fn statement(&mut self) -> Result<Stmt> {
@@ -180,6 +215,12 @@ impl Parser {
         if self._match(&[Kind::STRING]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
                 value: Object::STRING(self.previous().lexeme),
+            })));
+        }
+
+        if self._match(&[Kind::IDENTIFIER]) {
+            return Ok(Expr::Variable(Box::new(VariableExpression {
+                name: self.previous(),
             })));
         }
 

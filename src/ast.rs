@@ -24,6 +24,7 @@ pub enum Expr {
     Unary(Box<UnaryExpression>),
     Grouping(Box<GroupingExpression>),
     Literal(Box<LiteralExpression>),
+    Variable(Box<VariableExpression>),
 }
 
 impl std::fmt::Display for Expr {
@@ -40,6 +41,9 @@ impl std::fmt::Display for Expr {
             }
             Expr::Literal(literal) => {
                 write!(f, "{}", literal.value)
+            }
+            Expr::Variable(variable) => {
+                write!(f, "{}", variable.name.lexeme)
             }
         }
     }
@@ -61,6 +65,11 @@ pub struct UnaryExpression {
 #[derive(Debug)]
 pub struct GroupingExpression {
     pub expression: Expr,
+}
+
+#[derive(Debug)]
+pub struct VariableExpression {
+    pub name: Token,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,6 +100,7 @@ pub struct LiteralExpression {
 pub enum Stmt {
     Expression(Box<ExpressionStatement>),
     Print(Box<PrintStatement>),
+    Var(Box<VarStatement>),
 }
 
 #[derive(Debug)]
@@ -101,4 +111,10 @@ pub struct ExpressionStatement {
 #[derive(Debug)]
 pub struct PrintStatement {
     pub expression: Expr,
+}
+
+#[derive(Debug)]
+pub struct VarStatement {
+    pub name: Token,
+    pub initializer: Option<Expr>,
 }
