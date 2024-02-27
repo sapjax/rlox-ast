@@ -1,6 +1,14 @@
 /*
 
 ==================== Grammar ====================
+program        → statement* EOF ;
+
+statement      → exprStmt
+               | printStmt ;
+
+exprStmt       → expression ";" ;
+printStmt      → "print" expression ";" ;
+
 expression     → equality ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
@@ -15,7 +23,8 @@ primary        → NUMBER | STRING | "true" | "false" | "nil"
 */
 
 use crate::ast::{
-    BinaryExpression, Expr, GroupingExpression, LiteralExpression, Object, UnaryExpression,
+    BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
+    PrintStatement, Stmt, UnaryExpression,
 };
 use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
@@ -37,8 +46,34 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Expr> {
-        self.expression()
+    pub fn parse(&mut self) -> Result<Vec<Stmt>> {
+        let mut statements: Vec<Stmt> = Vec::new();
+        while !self.is_at_end() {
+            statements.push(self.statement()?);
+        }
+
+        Ok(statements)
+    }
+
+    fn statement(&mut self) -> Result<Stmt> {
+        if self._match(&[Kind::PRINT]) {
+            return self.print_statement();
+        }
+        self.expression_statement()
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt> {
+        let value = self.expression()?;
+        self.consume(Kind::SEMICOLON, "Expect ';' after value.")?;
+        Ok(Stmt::Print(Box::new(PrintStatement { expression: value })))
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt> {
+        let value = self.expression()?;
+        self.consume(Kind::SEMICOLON, "Expect ';' after value.")?;
+        Ok(Stmt::Expression(Box::new(ExpressionStatement {
+            expression: value,
+        })))
     }
 
     fn expression(&mut self) -> Result<Expr> {

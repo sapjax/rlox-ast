@@ -1,5 +1,8 @@
 use crate::{
-    ast::{BinaryExpression, Expr, GroupingExpression, LiteralExpression, Object, UnaryExpression},
+    ast::{
+        BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
+        PrintStatement, Stmt, UnaryExpression,
+    },
     reporter::SyntaxError,
     token::{Kind, Token},
 };
@@ -13,8 +16,30 @@ impl Interpreter {
         Self {}
     }
 
-    pub fn interpret(&self, expr: Expr) -> Result<Object> {
-        self.evaluate(expr)
+    pub fn interpret(&self, statements: Vec<Stmt>) -> Result<()> {
+        // self.evaluate(expr)
+        for statement in statements {
+            self.execute(statement)?;
+        }
+        Ok(())
+    }
+
+    fn execute(&self, stmt: Stmt) -> Result<()> {
+        match stmt {
+            Stmt::Print(print) => self.visit_print_stmt(*print),
+            Stmt::Expression(expression) => self.visit_expression_stmt(*expression),
+        }
+    }
+
+    fn visit_print_stmt(&self, stmt: PrintStatement) -> Result<()> {
+        let value = self.evaluate(stmt.expression)?;
+        println!("{}", value);
+        Ok(())
+    }
+
+    fn visit_expression_stmt(&self, stmt: ExpressionStatement) -> Result<()> {
+        self.evaluate(stmt.expression)?;
+        Ok(())
     }
 
     fn visit_literal_expr(&self, expr: LiteralExpression) -> Result<Object> {

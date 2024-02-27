@@ -86,3 +86,19 @@ impl std::fmt::Display for Object {
 pub struct LiteralExpression {
     pub value: Object,
 }
+
+#[derive(Debug)]
+pub enum Stmt {
+    Expression(Box<ExpressionStatement>),
+    Print(Box<PrintStatement>),
+}
+
+#[derive(Debug)]
+pub struct ExpressionStatement {
+    pub expression: Expr,
+}
+
+#[derive(Debug)]
+pub struct PrintStatement {
+    pub expression: Expr,
+}

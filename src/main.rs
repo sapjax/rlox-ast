@@ -49,15 +49,15 @@ fn run(source: &str, is_repl: bool) {
 
     let parser_reporter = reporter::Reporter::new();
     let mut parser = parser::Parser::new(tokens, parser_reporter);
-    let expr = parser.parse();
-    match expr {
-        Ok(expr) => {
-            println!("==> {}", expr);
+    let statements = parser.parse();
+    match statements {
+        Ok(stmts) => {
+            println!("==> {:?}", stmts); // TODO: print AST in S-expression format
             let interpreter = interpreter::Interpreter::new();
-            let value = interpreter.interpret(expr);
+            let value = interpreter.interpret(stmts);
             match value {
                 Ok(value) => {
-                    println!("==> {}", value);
+                    println!("==> {:?}", value);
                 }
                 Err(_err) => exit(70, is_repl),
             }
