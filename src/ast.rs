@@ -4,12 +4,16 @@
 expression     → literal
                | unary
                | binary
+               | variable
+               | assign
                | grouping ;
 
 literal        → NUMBER | STRING | "true" | "false" | "nil" ;
 grouping       → "(" expression ")" ;
 unary          → ( "-" | "!" ) expression ;
 binary         → expression operator expression ;
+varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
+assignment     → IDENTIFIER "=" assignment
 operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
                | "+"  | "-"  | "*" | "/" ;
 
@@ -25,6 +29,7 @@ pub enum Expr {
     Grouping(Box<GroupingExpression>),
     Literal(Box<LiteralExpression>),
     Variable(Box<VariableExpression>),
+    Assign(Box<AssignExpression>),
 }
 
 impl std::fmt::Display for Expr {
@@ -44,6 +49,9 @@ impl std::fmt::Display for Expr {
             }
             Expr::Variable(variable) => {
                 write!(f, "{}", variable.name.lexeme)
+            }
+            Expr::Assign(assign) => {
+                write!(f, "(= {} {})", assign.name.lexeme, assign.value)
             }
         }
     }
@@ -70,6 +78,12 @@ pub struct GroupingExpression {
 #[derive(Debug)]
 pub struct VariableExpression {
     pub name: Token,
+}
+
+#[derive(Debug)]
+pub struct AssignExpression {
+    pub name: Token,
+    pub value: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]

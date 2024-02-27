@@ -1,7 +1,8 @@
 use crate::{
     ast::{
-        BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
-        PrintStatement, Stmt, UnaryExpression, VarStatement, VariableExpression,
+        AssignExpression, BinaryExpression, Expr, ExpressionStatement, GroupingExpression,
+        LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression, VarStatement,
+        VariableExpression,
     },
     reporter::SyntaxError,
     token::{Kind, Token},
@@ -37,7 +38,7 @@ impl Interpreter {
         }
     }
 
-    fn visit_print_stmt(&self, stmt: PrintStatement) -> Result<()> {
+    fn visit_print_stmt(&mut self, stmt: PrintStatement) -> Result<()> {
         let value = self.evaluate(stmt.expression)?;
         println!("{}", value);
         Ok(())
@@ -53,20 +54,29 @@ impl Interpreter {
         Ok(())
     }
 
-    fn visit_expression_stmt(&self, stmt: ExpressionStatement) -> Result<()> {
+    fn visit_expression_stmt(&mut self, stmt: ExpressionStatement) -> Result<()> {
         self.evaluate(stmt.expression)?;
         Ok(())
+    }
+
+    fn visit_assign_expr(&mut self, expr: AssignExpression) -> Result<Object> {
+        let value = self.evaluate(expr.value)?;
+        let old_value = self.environment.assign(&expr.name.lexeme, value.clone());
+        match old_value {
+            Some(_) => Ok(value),
+            None => Err(Self::runtime_error(expr.name, "Undefined variable")),
+        }
     }
 
     fn visit_literal_expr(&self, expr: LiteralExpression) -> Result<Object> {
         Ok(expr.value)
     }
 
-    fn visit_grouping_expr(&self, expr: GroupingExpression) -> Result<Object> {
+    fn visit_grouping_expr(&mut self, expr: GroupingExpression) -> Result<Object> {
         self.evaluate(expr.expression)
     }
 
-    fn visit_unary_expr(&self, expr: UnaryExpression) -> Result<Object> {
+    fn visit_unary_expr(&mut self, expr: UnaryExpression) -> Result<Object> {
         let right = self.evaluate(expr.right)?;
 
         match expr.op.kind {
@@ -87,7 +97,7 @@ impl Interpreter {
         }
     }
 
-    fn visit_binary_expr(&self, expr: BinaryExpression) -> Result<Object> {
+    fn visit_binary_expr(&mut self, expr: BinaryExpression) -> Result<Object> {
         let left = self.evaluate(expr.left)?;
         let right = self.evaluate(expr.right)?;
         let lexeme = expr.op.lexeme.clone();
@@ -132,7 +142,10 @@ impl Interpreter {
     }
 
     fn runtime_error(token: Token, message: &str) -> SyntaxError {
-        println!("Error: [line {}] {}", message, token.line);
+        println!(
+            "Error: [line {}] '{}' {}",
+            token.line, token.lexeme, message
+        );
         SyntaxError::RuntimeError(message.to_string())
     }
 
@@ -148,13 +161,14 @@ impl Interpreter {
         }
     }
 
-    fn evaluate(&self, expr: Expr) -> Result<Object> {
+    fn evaluate(&mut self, expr: Expr) -> Result<Object> {
         match expr {
             Expr::Literal(literal) => self.visit_literal_expr(*literal),
             Expr::Grouping(grouping) => self.visit_grouping_expr(*grouping),
             Expr::Unary(unary) => self.visit_unary_expr(*unary),
             Expr::Binary(binary) => self.visit_binary_expr(*binary),
             Expr::Variable(variable) => self.visit_var_expr(*variable),
+            Expr::Assign(assign) => self.visit_assign_expr(*assign),
         }
     }
 
@@ -184,5 +198,9 @@ impl Environment {
 
     pub fn get(&self, name: &str) -> Option<&Object> {
         self.values.get(name)
+    }
+
+    pub fn assign(&mut self, name: &str, value: Object) -> Option<Object> {
+        self.values.insert(name.to_string(), value)
     }
 }

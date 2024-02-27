@@ -14,7 +14,9 @@ statement      → exprStmt
 exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
 
-expression     → equality ;
+expression     → assignment ;
+assignment     → IDENTIFIER "=" assignment
+               | equality ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
@@ -30,8 +32,9 @@ primary        → "true" | "false" | "nil"
 */
 
 use crate::ast::{
-    BinaryExpression, Expr, ExpressionStatement, GroupingExpression, LiteralExpression, Object,
-    PrintStatement, Stmt, UnaryExpression, VarStatement, VariableExpression,
+    AssignExpression, BinaryExpression, Expr, ExpressionStatement, GroupingExpression,
+    LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression, VarStatement,
+    VariableExpression,
 };
 use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
@@ -112,7 +115,28 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr> {
+        let expr = self.equality()?;
+
+        if self._match(&[Kind::EQUAL]) {
+            let equals = self.previous();
+            let value = self.assignment()?;
+
+            if let Expr::Variable(v) = expr {
+                let name = v.name;
+                return Ok(Expr::Assign(Box::new(AssignExpression {
+                    name: name,
+                    value: value,
+                })));
+            }
+
+            self.error(equals, "Invalid assignment target.");
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr> {
