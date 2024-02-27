@@ -1,4 +1,5 @@
 use crate::token::{Kind, Token};
+use colored::Colorize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -25,7 +26,12 @@ impl Reporter {
     }
 
     pub fn report(&mut self, line: usize, at: &str, message: &str) {
-        println!("Error: [line {}] Error {}: {}", line, at, message);
+        println!(
+            "Error: [line {}] Error {}: {}",
+            line,
+            at,
+            message.bright_red()
+        );
         self.had_error = true;
     }
 

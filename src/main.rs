@@ -1,3 +1,4 @@
+use colored::Colorize;
 use lexer::Lexer;
 use std::env;
 use std::fs;
@@ -31,7 +32,7 @@ fn run_file(file_path: &str) {
 
 fn run_repl() {
     loop {
-        println!("> ");
+        println!("{} ", "🦀>".purple().bold());
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).unwrap();
         run(&input, true);
@@ -52,12 +53,12 @@ fn run(source: &str, is_repl: bool) {
     let statements = parser.parse();
     match statements {
         Ok(stmts) => {
-            println!("==> {:?}", stmts); // TODO: print AST in S-expression format
+            println!("{} {:?}", "==>".blue(), stmts); // TODO: print AST in S-expression format
             let interpreter = interpreter::Interpreter::new();
             let value = interpreter.interpret(stmts);
             match value {
                 Ok(value) => {
-                    println!("==> {:?}", value);
+                    println!("{} {:?}", "==>".blue(), value);
                 }
                 Err(_err) => exit(70, is_repl),
             }
