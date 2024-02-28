@@ -9,7 +9,10 @@ declaration    → varDecl
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
 statement      → exprStmt
-               | printStmt ;
+               | printStmt
+               | block ;
+
+block          → "{" declaration* "}" ;
 
 exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
@@ -32,9 +35,9 @@ primary        → "true" | "false" | "nil"
 */
 
 use crate::ast::{
-    AssignExpression, BinaryExpression, Expr, ExpressionStatement, GroupingExpression,
-    LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression, VarStatement,
-    VariableExpression,
+    AssignExpression, BinaryExpression, BlockStatement, Expr, ExpressionStatement,
+    GroupingExpression, LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression,
+    VarStatement, VariableExpression,
 };
 use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
@@ -97,7 +100,23 @@ impl Parser {
         if self._match(&[Kind::PRINT]) {
             return self.print_statement();
         }
+        if self._match(&[Kind::LEFT_BRACE]) {
+            let statements = self.block()?;
+            return Ok(Stmt::Block(Box::new(BlockStatement { statements })));
+        }
         self.expression_statement()
+    }
+
+    fn block(&mut self) -> Result<Vec<Stmt>> {
+        let mut statements: Vec<Stmt> = Vec::new();
+
+        while !self.check(&Kind::RIGHT_BRACE) && !self.is_at_end() {
+            let stmt = self.declaration()?;
+            statements.push(stmt);
+        }
+
+        self.consume(Kind::RIGHT_BRACE, "Expect '}' after block.")?;
+        Ok(statements)
     }
 
     fn print_statement(&mut self) -> Result<Stmt> {

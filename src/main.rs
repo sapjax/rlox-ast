@@ -1,5 +1,4 @@
 use colored::Colorize;
-use lexer::Lexer;
 use std::env;
 use std::fs;
 use std::process;
@@ -41,7 +40,7 @@ fn run_repl() {
 
 fn run(source: &str, is_repl: bool) {
     let lexer_reporter = reporter::Reporter::new();
-    let mut lexer = Lexer::new(source, lexer_reporter);
+    let mut lexer = lexer::Lexer::new(source, lexer_reporter);
     let tokens = lexer.scan_tokens();
 
     if lexer.reporter.had_error {

@@ -1,24 +1,26 @@
 use crate::{
     ast::{
-        AssignExpression, BinaryExpression, Expr, ExpressionStatement, GroupingExpression,
-        LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression, VarStatement,
-        VariableExpression,
+        AssignExpression, BinaryExpression, BlockStatement, Expr, ExpressionStatement,
+        GroupingExpression, LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression,
+        VarStatement, VariableExpression,
     },
     reporter::SyntaxError,
     token::{Kind, Token},
 };
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub type Result<T> = std::result::Result<T, SyntaxError>;
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new(),
+            environment: Rc::new(RefCell::new(Environment::new())),
         }
     }
 
@@ -35,7 +37,27 @@ impl Interpreter {
             Stmt::Print(print) => self.visit_print_stmt(*print),
             Stmt::Expression(expression) => self.visit_expression_stmt(*expression),
             Stmt::Var(var) => self.visit_var_stmt(*var),
+            Stmt::Block(block) => self.visit_block_stmt(*block),
         }
+    }
+
+    fn execute_block(&mut self, statements: Vec<Stmt>) -> Result<()> {
+        for statement in statements {
+            self.execute(statement)?
+        }
+        Ok(())
+    }
+
+    fn visit_block_stmt(&mut self, stmt: BlockStatement) -> Result<()> {
+        let parent_env = self.environment.clone();
+        let block_env = Environment::new_child(&self.environment.clone());
+
+        // set current environment to the new environment
+        self.environment = Rc::new(RefCell::new(block_env));
+        let result = self.execute_block(stmt.statements);
+        // set the environment back to the parent environment
+        self.environment = parent_env;
+        result
     }
 
     fn visit_print_stmt(&mut self, stmt: PrintStatement) -> Result<()> {
@@ -50,7 +72,9 @@ impl Interpreter {
             None => Object::NIL(()),
         };
 
-        self.environment.define(stmt.name.lexeme, value);
+        self.environment
+            .borrow_mut()
+            .define(stmt.name.lexeme, value);
         Ok(())
     }
 
@@ -61,7 +85,10 @@ impl Interpreter {
 
     fn visit_assign_expr(&mut self, expr: AssignExpression) -> Result<Object> {
         let value = self.evaluate(expr.value)?;
-        let old_value = self.environment.assign(&expr.name.lexeme, value.clone());
+        let old_value = self
+            .environment
+            .borrow_mut()
+            .assign(&expr.name.lexeme, value.clone());
         match old_value {
             Some(_) => Ok(value),
             None => Err(Self::runtime_error(expr.name, "Undefined variable")),
@@ -91,7 +118,7 @@ impl Interpreter {
     }
 
     fn visit_var_expr(&self, expr: VariableExpression) -> Result<Object> {
-        match self.environment.get(&expr.name.lexeme) {
+        match self.environment.borrow().get(&expr.name.lexeme) {
             Some(value) => Ok(value.clone()),
             None => Err(Self::runtime_error(expr.name, "Undefined variable")),
         }
@@ -181,13 +208,23 @@ impl Interpreter {
     }
 }
 
+#[derive(Clone)]
 pub struct Environment {
     values: HashMap<String, Object>,
+    parent: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
-        Self {
+        Environment {
+            parent: None,
+            values: HashMap::new(),
+        }
+    }
+
+    pub fn new_child(parent: &Rc<RefCell<Environment>>) -> Self {
+        Environment {
+            parent: Some(parent.clone()),
             values: HashMap::new(),
         }
     }
@@ -196,11 +233,25 @@ impl Environment {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Object> {
-        self.values.get(name)
+    pub fn get(&self, name: &str) -> Option<Object> {
+        if let Some(value) = self.values.get(name) {
+            return Some(value.clone());
+        }
+
+        match &self.parent {
+            Some(parent) => parent.borrow().get(name).clone(),
+            None => None,
+        }
     }
 
     pub fn assign(&mut self, name: &str, value: Object) -> Option<Object> {
-        self.values.insert(name.to_string(), value)
+        if self.values.contains_key(name) {
+            self.values.insert(name.to_string(), value)
+        } else {
+            match &mut self.parent {
+                Some(parent) => parent.borrow_mut().assign(name, value),
+                None => None,
+            }
+        }
     }
 }

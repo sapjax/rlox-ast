@@ -112,6 +112,7 @@ pub struct LiteralExpression {
 
 #[derive(Debug)]
 pub enum Stmt {
+    Block(Box<BlockStatement>),
     Expression(Box<ExpressionStatement>),
     Print(Box<PrintStatement>),
     Var(Box<VarStatement>),
@@ -131,4 +132,9 @@ pub struct PrintStatement {
 pub struct VarStatement {
     pub name: Token,
     pub initializer: Option<Expr>,
+}
+
+#[derive(Debug)]
+pub struct BlockStatement {
+    pub statements: Vec<Stmt>,
 }
