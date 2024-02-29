@@ -1,4 +1,5 @@
 use colored::Colorize;
+use serde_json;
 use std::env;
 use std::fs;
 use std::process;
@@ -52,7 +53,9 @@ fn run(source: &str, is_repl: bool) {
     let statements = parser.parse();
     match statements {
         Ok(stmts) => {
-            println!("{} {:?}", "==>".blue(), stmts); // TODO: print AST in S-expression format
+            let ast_json = serde_json::to_string_pretty(&stmts).unwrap();
+            println!("{}", ast_json);
+
             let mut interpreter = interpreter::Interpreter::new();
             let value = interpreter.interpret(stmts);
             match value {

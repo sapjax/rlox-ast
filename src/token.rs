@@ -1,13 +1,15 @@
 #![allow(non_camel_case_types)]
 
-#[derive(Debug, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Token {
     pub kind: Kind,
     pub line: usize,
     pub lexeme: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub enum Kind {
     // Single-character tokens.
     LEFT_PAREN,
