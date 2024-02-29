@@ -1,9 +1,5 @@
 use crate::{
-    ast::{
-        AssignExpression, BinaryExpression, BlockStatement, Expr, ExpressionStatement,
-        GroupingExpression, IfStatement, LiteralExpression, Object, PrintStatement, Stmt,
-        UnaryExpression, VarStatement, VariableExpression,
-    },
+    ast::*,
     reporter::SyntaxError,
     token::{Kind, Token},
 };
@@ -39,6 +35,7 @@ impl Interpreter {
             Stmt::Var(var) => self.visit_var_stmt(*var),
             Stmt::Block(block) => self.visit_block_stmt(*block),
             Stmt::If(if_stmt) => self.visit_if_stmt(*if_stmt),
+            Stmt::While(while_stmt) => self.visit_while_stmt(*while_stmt),
         }
     }
 
@@ -89,6 +86,13 @@ impl Interpreter {
             self.execute(stmt.then_branch)?
         } else if let Some(else_branch) = stmt.else_branch {
             self.execute(else_branch)?
+        }
+        Ok(())
+    }
+
+    fn visit_while_stmt(&mut self, stmt: WhileStatement) -> Result<()> {
+        while Self::is_truthy(self.evaluate(stmt.condition.clone())?) {
+            self.execute(stmt.body.clone())?;
         }
         Ok(())
     }

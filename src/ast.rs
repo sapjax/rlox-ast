@@ -25,7 +25,51 @@ operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
 use crate::token::Token;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Stmt {
+    Block(Box<BlockStatement>),
+    Expression(Box<ExpressionStatement>),
+    If(Box<IfStatement>),
+    Print(Box<PrintStatement>),
+    Var(Box<VarStatement>),
+    While(Box<WhileStatement>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpressionStatement {
+    pub expression: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IfStatement {
+    pub condition: Expr,
+    pub then_branch: Stmt,
+    pub else_branch: Option<Stmt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrintStatement {
+    pub expression: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VarStatement {
+    pub name: Token,
+    pub initializer: Option<Expr>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockStatement {
+    pub statements: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhileStatement {
+    pub condition: Expr,
+    pub body: Stmt,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Expr {
     Binary(Box<BinaryExpression>),
     Unary(Box<UnaryExpression>),
@@ -34,6 +78,48 @@ pub enum Expr {
     Logical(Box<BinaryExpression>),
     Variable(Box<VariableExpression>),
     Assign(Box<AssignExpression>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryExpression {
+    pub op: Token,
+    pub left: Expr,
+    pub right: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnaryExpression {
+    pub op: Token,
+    pub right: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupingExpression {
+    pub expression: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableExpression {
+    pub name: Token,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssignExpression {
+    pub name: Token,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiteralExpression {
+    pub value: Object,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Object {
+    BOOL(bool),
+    STRING(String),
+    NUMBER(f64),
+    NIL(()),
 }
 
 impl std::fmt::Display for Expr {
@@ -61,43 +147,6 @@ impl std::fmt::Display for Expr {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BinaryExpression {
-    pub op: Token,
-    pub left: Expr,
-    pub right: Expr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UnaryExpression {
-    pub op: Token,
-    pub right: Expr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GroupingExpression {
-    pub expression: Expr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VariableExpression {
-    pub name: Token,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AssignExpression {
-    pub name: Token,
-    pub value: Expr,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Object {
-    BOOL(bool),
-    STRING(String),
-    NUMBER(f64),
-    NIL(()),
-}
-
 impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -107,46 +156,4 @@ impl std::fmt::Display for Object {
             Object::NIL(_) => write!(f, "nil"),
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LiteralExpression {
-    pub value: Object,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Stmt {
-    Block(Box<BlockStatement>),
-    Expression(Box<ExpressionStatement>),
-    If(Box<IfStatement>),
-    Print(Box<PrintStatement>),
-    Var(Box<VarStatement>),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ExpressionStatement {
-    pub expression: Expr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IfStatement {
-    pub condition: Expr,
-    pub then_branch: Stmt,
-    pub else_branch: Option<Stmt>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PrintStatement {
-    pub expression: Expr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VarStatement {
-    pub name: Token,
-    pub initializer: Option<Expr>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BlockStatement {
-    pub statements: Vec<Stmt>,
 }
