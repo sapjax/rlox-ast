@@ -12,7 +12,9 @@ literal        → NUMBER | STRING | "true" | "false" | "nil" ;
 grouping       → "(" expression ")" ;
 unary          → ( "-" | "!" ) expression ;
 binary         → expression operator expression ;
-varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
+logical        → expression ( "and" | "or" ) expression ;
+variable       → IDENTIFIER ;
+
 assignment     → IDENTIFIER "=" assignment
 operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
                | "+"  | "-"  | "*" | "/" ;
@@ -28,6 +30,7 @@ pub enum Expr {
     Unary(Box<UnaryExpression>),
     Grouping(Box<GroupingExpression>),
     Literal(Box<LiteralExpression>),
+    Logical(Box<BinaryExpression>),
     Variable(Box<VariableExpression>),
     Assign(Box<AssignExpression>),
 }
@@ -35,7 +38,7 @@ pub enum Expr {
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expr::Binary(binary) => {
+            Expr::Binary(binary) | Expr::Logical(binary) => {
                 write!(f, "({} {} {})", binary.op.lexeme, binary.left, binary.right)
             }
             Expr::Unary(unary) => {

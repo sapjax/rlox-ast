@@ -109,6 +109,23 @@ impl Interpreter {
         Ok(expr.value)
     }
 
+    fn visit_logical_expr(&mut self, expr: BinaryExpression) -> Result<Object> {
+        let left = self.evaluate(expr.left)?;
+        let left_is_truthy = Self::is_truthy(left.clone());
+
+        if expr.op.kind == Kind::OR {
+            if left_is_truthy {
+                return Ok(left);
+            }
+        } else {
+            if !left_is_truthy {
+                return Ok(left);
+            }
+        }
+
+        self.evaluate(expr.right)
+    }
+
     fn visit_grouping_expr(&mut self, expr: GroupingExpression) -> Result<Object> {
         self.evaluate(expr.expression)
     }
@@ -206,6 +223,7 @@ impl Interpreter {
             Expr::Binary(binary) => self.visit_binary_expr(*binary),
             Expr::Variable(variable) => self.visit_var_expr(*variable),
             Expr::Assign(assign) => self.visit_assign_expr(*assign),
+            Expr::Logical(logical) => self.visit_logical_expr(*logical),
         }
     }
 

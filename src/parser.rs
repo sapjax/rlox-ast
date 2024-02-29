@@ -23,7 +23,9 @@ printStmt      → "print" expression ";" ;
 
 expression     → assignment ;
 assignment     → IDENTIFIER "=" assignment
-               | equality ;
+               | logic_or ;
+logic_or       → logic_and ( "or" logic_and )* ;
+logic_and      → equality ( "and" equality )* ;
 equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
@@ -94,10 +96,7 @@ impl Parser {
         };
 
         self.consume(Kind::SEMICOLON, "Expect ';' after variable declaration.")?;
-        Ok(Stmt::Var(Box::new(VarStatement {
-            name: name,
-            initializer: initializer,
-        })))
+        Ok(Stmt::Var(Box::new(VarStatement { name, initializer })))
     }
 
     fn statement(&mut self) -> Result<Stmt> {
@@ -127,9 +126,9 @@ impl Parser {
         };
 
         Ok(Stmt::If(Box::new(IfStatement {
-            condition: condition,
-            then_branch: then_branch,
-            else_branch: else_branch,
+            condition,
+            then_branch,
+            else_branch,
         })))
     }
 
@@ -164,7 +163,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expr> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self._match(&[Kind::EQUAL]) {
             let equals = self.previous();
@@ -172,15 +171,42 @@ impl Parser {
 
             if let Expr::Variable(v) = expr {
                 let name = v.name;
-                return Ok(Expr::Assign(Box::new(AssignExpression {
-                    name: name,
-                    value: value,
-                })));
+                return Ok(Expr::Assign(Box::new(AssignExpression { name, value })));
             }
 
             self.error(equals, "Invalid assignment target.");
         }
 
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr> {
+        let mut expr = self.and()?;
+
+        while self._match(&[Kind::OR]) {
+            let op = self.previous();
+            let right = self.and()?;
+            expr = Expr::Logical(Box::new(BinaryExpression {
+                left: expr,
+                op,
+                right,
+            }));
+        }
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
+
+        while self._match(&[Kind::AND]) {
+            let op = self.previous();
+            let right = self.equality()?;
+            expr = Expr::Logical(Box::new(BinaryExpression {
+                left: expr,
+                op,
+                right,
+            }));
+        }
         Ok(expr)
     }
 
@@ -193,7 +219,7 @@ impl Parser {
             expr = Expr::Binary(Box::new(BinaryExpression {
                 left: expr,
                 op,
-                right: right,
+                right,
             }));
         }
         Ok(expr)
@@ -213,7 +239,7 @@ impl Parser {
             expr = Expr::Binary(Box::new(BinaryExpression {
                 left: expr,
                 op,
-                right: right,
+                right,
             }));
         }
         Ok(expr)
@@ -228,7 +254,7 @@ impl Parser {
             expr = Expr::Binary(Box::new(BinaryExpression {
                 left: expr,
                 op,
-                right: right,
+                right,
             }));
         }
         Ok(expr)
@@ -243,7 +269,7 @@ impl Parser {
             expr = Expr::Binary(Box::new(BinaryExpression {
                 left: expr,
                 op,
-                right: right,
+                right,
             }));
         }
         Ok(expr)
