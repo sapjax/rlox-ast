@@ -9,8 +9,12 @@ declaration    → varDecl
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
 statement      → exprStmt
+               | ifStmt
                | printStmt
                | block ;
+
+ifStmt         → "if" "(" expression ")" statement
+               ( "else" statement )? ;
 
 block          → "{" declaration* "}" ;
 
@@ -36,8 +40,8 @@ primary        → "true" | "false" | "nil"
 
 use crate::ast::{
     AssignExpression, BinaryExpression, BlockStatement, Expr, ExpressionStatement,
-    GroupingExpression, LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression,
-    VarStatement, VariableExpression,
+    GroupingExpression, IfStatement, LiteralExpression, Object, PrintStatement, Stmt,
+    UnaryExpression, VarStatement, VariableExpression,
 };
 use crate::reporter::{Reporter, SyntaxError};
 use crate::token::{Kind, Token};
@@ -97,6 +101,9 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt> {
+        if self._match(&[Kind::IF]) {
+            return self.if_statement();
+        }
         if self._match(&[Kind::PRINT]) {
             return self.print_statement();
         }
@@ -105,6 +112,25 @@ impl Parser {
             return Ok(Stmt::Block(Box::new(BlockStatement { statements })));
         }
         self.expression_statement()
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt> {
+        self.consume(Kind::LEFT_PAREN, "Expect '(' after 'if'.")?;
+        let condition = self.expression()?;
+        self.consume(Kind::RIGHT_PAREN, "Expect ')' after if condition.")?;
+
+        let then_branch = self.statement()?;
+        let else_branch = if self._match(&[Kind::ELSE]) {
+            Some(self.statement()?)
+        } else {
+            None
+        };
+
+        Ok(Stmt::If(Box::new(IfStatement {
+            condition: condition,
+            then_branch: then_branch,
+            else_branch: else_branch,
+        })))
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>> {

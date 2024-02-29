@@ -114,6 +114,7 @@ pub struct LiteralExpression {
 pub enum Stmt {
     Block(Box<BlockStatement>),
     Expression(Box<ExpressionStatement>),
+    If(Box<IfStatement>),
     Print(Box<PrintStatement>),
     Var(Box<VarStatement>),
 }
@@ -121,6 +122,13 @@ pub enum Stmt {
 #[derive(Debug)]
 pub struct ExpressionStatement {
     pub expression: Expr,
+}
+
+#[derive(Debug)]
+pub struct IfStatement {
+    pub condition: Expr,
+    pub then_branch: Stmt,
+    pub else_branch: Option<Stmt>,
 }
 
 #[derive(Debug)]

@@ -1,8 +1,8 @@
 use crate::{
     ast::{
         AssignExpression, BinaryExpression, BlockStatement, Expr, ExpressionStatement,
-        GroupingExpression, LiteralExpression, Object, PrintStatement, Stmt, UnaryExpression,
-        VarStatement, VariableExpression,
+        GroupingExpression, IfStatement, LiteralExpression, Object, PrintStatement, Stmt,
+        UnaryExpression, VarStatement, VariableExpression,
     },
     reporter::SyntaxError,
     token::{Kind, Token},
@@ -38,6 +38,7 @@ impl Interpreter {
             Stmt::Expression(expression) => self.visit_expression_stmt(*expression),
             Stmt::Var(var) => self.visit_var_stmt(*var),
             Stmt::Block(block) => self.visit_block_stmt(*block),
+            Stmt::If(if_stmt) => self.visit_if_stmt(*if_stmt),
         }
     }
 
@@ -83,6 +84,15 @@ impl Interpreter {
         Ok(())
     }
 
+    fn visit_if_stmt(&mut self, stmt: IfStatement) -> Result<()> {
+        if Self::is_truthy(self.evaluate(stmt.condition)?) {
+            self.execute(stmt.then_branch)?
+        } else if let Some(else_branch) = stmt.else_branch {
+            self.execute(else_branch)?
+        }
+        Ok(())
+    }
+
     fn visit_assign_expr(&mut self, expr: AssignExpression) -> Result<Object> {
         let value = self.evaluate(expr.value)?;
         let old_value = self
@@ -107,7 +117,7 @@ impl Interpreter {
         let right = self.evaluate(expr.right)?;
 
         match expr.op.kind {
-            Kind::BANG => Ok(Object::BOOL(!self.is_truthy(right))),
+            Kind::BANG => Ok(Object::BOOL(!Self::is_truthy(right))),
             Kind::MINUS => match right {
                 Object::NUMBER(n) => Ok(Object::NUMBER(-n)),
                 _ => Err(Self::runtime_error(expr.op, "Operand must be a number")),
@@ -199,7 +209,7 @@ impl Interpreter {
         }
     }
 
-    fn is_truthy(&self, value: Object) -> bool {
+    fn is_truthy(value: Object) -> bool {
         match value {
             Object::BOOL(b) => b,
             Object::NIL(()) => false,
