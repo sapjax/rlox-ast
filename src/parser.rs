@@ -3,8 +3,12 @@
 ==================== Grammar ====================
 program        → declaration* EOF ;
 
-declaration    → varDecl
+declaration    → funDecl
+               | varDecl
                | statement ;
+
+funDecl        → "fun" function ;
+function       → IDENTIFIER "(" parameters? ")" block ;
 
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
@@ -12,8 +16,11 @@ statement      → exprStmt
                | forStmt
                | ifStmt
                | printStmt
+               | returnStmt
                | whileStmt
                | block ;
+
+returnStmt     → "return" expression? ";" ;
 
 ifStmt         → "if" "(" expression ")" statement
                ( "else" statement )? ;
@@ -38,8 +45,8 @@ equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
-unary          → ( "!" | "-" ) unary
-               | primary ;
+unary          → ( "!" | "-" ) unary | call ;
+call           → primary ( "(" arguments? ")" )* ;
 primary        → "true" | "false" | "nil"
                | NUMBER | STRING
                | "(" expression ")"
@@ -83,6 +90,9 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Stmt> {
+        if self._match(&[Kind::FUN]) {
+            return self.function("function");
+        }
         if self._match(&[Kind::VAR]) {
             self.var_declaration()
         } else {
@@ -113,6 +123,9 @@ impl Parser {
         if self._match(&[Kind::PRINT]) {
             return self.print_statement();
         }
+        if self._match(&[Kind::RETURN]) {
+            return self.return_statement();
+        }
         if self._match(&[Kind::WHILE]) {
             return self.while_statement();
         }
@@ -138,7 +151,7 @@ impl Parser {
             self.expression()?
         } else {
             Expr::Literal(Box::new(LiteralExpression {
-                value: Object::BOOL(true),
+                value: Literal::Bool(true),
             }))
         };
         self.consume(Kind::SEMICOLON, "Expect ';' after loop condition.")?;
@@ -218,12 +231,53 @@ impl Parser {
         Ok(Stmt::Print(Box::new(PrintStatement { expression: value })))
     }
 
+    fn return_statement(&mut self) -> Result<Stmt> {
+        let keyword = self.previous();
+        let value = if !self.check(&Kind::SEMICOLON) {
+            self.expression()?
+        } else {
+            Expr::Literal(Box::new(LiteralExpression {
+                value: Literal::Nil(()),
+            }))
+        };
+        self.consume(Kind::SEMICOLON, "Expect ';' after return value.")?;
+        Ok(Stmt::Return(Box::new(ReturnStatement { keyword, value })))
+    }
+
     fn expression_statement(&mut self) -> Result<Stmt> {
         let value = self.expression()?;
         self.consume(Kind::SEMICOLON, "Expect ';' after value.")?;
         Ok(Stmt::Expression(Box::new(ExpressionStatement {
             expression: value,
         })))
+    }
+
+    fn function(&mut self, kind: &str) -> Result<Stmt> {
+        let name = self.consume(Kind::IDENTIFIER, &format!("Expect {kind} name."))?;
+        self.consume(Kind::LEFT_PAREN, &format!("Expect '(' after {kind} name."))?;
+
+        let mut params: Vec<Token> = Vec::new();
+        if !self.check(&Kind::RIGHT_PAREN) {
+            loop {
+                if params.len() >= 255 {
+                    self.error(self.peek(), "Can't have more than 255 parameters.");
+                }
+
+                params.push(self.consume(Kind::IDENTIFIER, "Expect parameter name.")?);
+                if !self._match(&[Kind::COMMA]) {
+                    break;
+                }
+            }
+        }
+        self.consume(Kind::RIGHT_PAREN, "Expect ')' after parameters.")?;
+
+        self.consume(
+            Kind::LEFT_BRACE,
+            &format!("Expect '{{' before {kind} body."),
+        )?;
+        let body = self.block()?;
+        let stmt = Stmt::Function(Box::new(FunctionStatement { name, params, body }));
+        Ok(stmt)
     }
 
     fn expression(&mut self) -> Result<Expr> {
@@ -349,35 +403,72 @@ impl Parser {
             let right = self.unary()?;
             return Ok(Expr::Unary(Box::new(UnaryExpression { op, right: right })));
         }
-        self.primary()
+        self.call()
+    }
+
+    fn call(&mut self) -> Result<Expr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self._match(&[Kind::LEFT_PAREN]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> Result<Expr> {
+        let mut arguments: Vec<Expr> = Vec::new();
+        if !self.check(&Kind::RIGHT_PAREN) {
+            loop {
+                if arguments.len() >= 255 {
+                    self.error(self.peek(), "Can't have more than 255 arguments.");
+                }
+
+                arguments.push(self.expression()?);
+                if !self._match(&[Kind::COMMA]) {
+                    break;
+                }
+            }
+        }
+
+        let paren = self.consume(Kind::RIGHT_PAREN, "Expect ')' after arguments.")?;
+
+        Ok(Expr::Call(Box::new(CallExpression {
+            callee,
+            paren,
+            arguments,
+        })))
     }
 
     fn primary(&mut self) -> Result<Expr> {
         if self._match(&[Kind::FALSE]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: Object::BOOL(false),
+                value: Literal::Bool(false),
             })));
         }
         if self._match(&[Kind::TRUE]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: Object::BOOL(true),
+                value: Literal::Bool(true),
             })));
         }
         if self._match(&[Kind::NIL]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: Object::NIL(()),
+                value: Literal::Nil(()),
             })));
         }
 
         if self._match(&[Kind::NUMBER]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: Object::NUMBER(self.previous().lexeme.parse::<f64>().unwrap()),
+                value: Literal::Num(self.previous().lexeme.parse::<f64>().unwrap()),
             })));
         }
 
         if self._match(&[Kind::STRING]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
-                value: Object::STRING(self.previous().lexeme),
+                value: Literal::Str(self.previous().lexeme),
             })));
         }
 

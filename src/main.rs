@@ -7,6 +7,7 @@ use std::process;
 mod ast;
 mod interpreter;
 mod lexer;
+mod object;
 mod parser;
 mod reporter;
 mod token;

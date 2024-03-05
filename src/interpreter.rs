@@ -1,22 +1,62 @@
 use crate::{
     ast::*,
+    object::*,
     reporter::SyntaxError,
     token::{Kind, Token},
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Result<T> = std::result::Result<T, SyntaxError>;
 
 pub struct Interpreter {
-    environment: Rc<RefCell<Environment>>,
+    pub environment: Rc<RefCell<Environment>>,
+    pub globals: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let globals = Rc::new(RefCell::new(Environment::new()));
+        let environment = Environment::new_child(&globals);
+
+        // define native fn clock
+        {
+            let now = SystemTime::now();
+            let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            let milliseconds = since_the_epoch.as_millis();
+
+            let clock_fn = LoxFunction::new(
+                FunctionStatement {
+                    name: Token {
+                        kind: Kind::IDENTIFIER,
+                        lexeme: "clock".to_string(),
+                        line: 0,
+                    },
+                    params: vec![],
+                    body: vec![Stmt::Return(Box::new(ReturnStatement {
+                        keyword: Token {
+                            kind: Kind::RETURN,
+                            lexeme: "return".to_string(),
+                            line: 0,
+                        },
+                        value: Expr::Literal(Box::new(LiteralExpression {
+                            value: Literal::Num(milliseconds as f64),
+                        })),
+                    }))],
+                },
+                None,
+            );
+
+            globals
+                .borrow_mut()
+                .define("clock".to_string(), Obj::Function(clock_fn));
+        }
+
         Self {
-            environment: Rc::new(RefCell::new(Environment::new())),
+            environment: Rc::new(RefCell::new(environment)),
+            globals: globals,
         }
     }
 
@@ -36,26 +76,31 @@ impl Interpreter {
             Stmt::Block(block) => self.visit_block_stmt(*block),
             Stmt::If(if_stmt) => self.visit_if_stmt(*if_stmt),
             Stmt::While(while_stmt) => self.visit_while_stmt(*while_stmt),
+            Stmt::Function(function) => self.visit_function_stmt(*function),
+            Stmt::Return(return_stmt) => self.visit_return_stmt(*return_stmt),
         }
     }
 
-    fn execute_block(&mut self, statements: Vec<Stmt>) -> Result<()> {
+    pub fn execute_block(&mut self, statements: Vec<Stmt>, block_env: Environment) -> Result<()> {
+        let parent_env = self.environment.clone();
+        // set current environment to the new environment
+        self.environment = Rc::new(RefCell::new(block_env));
+
+        let mut result = Ok(());
         for statement in statements {
-            self.execute(statement)?
+            if let Err(e) = self.execute(statement) {
+                result = Err(e);
+                break;
+            }
         }
-        Ok(())
+        // set current environment back to the parent environment
+        self.environment = parent_env;
+        result
     }
 
     fn visit_block_stmt(&mut self, stmt: BlockStatement) -> Result<()> {
-        let parent_env = self.environment.clone();
         let block_env = Environment::new_child(&self.environment.clone());
-
-        // set current environment to the new environment
-        self.environment = Rc::new(RefCell::new(block_env));
-        let result = self.execute_block(stmt.statements);
-        // set the environment back to the parent environment
-        self.environment = parent_env;
-        result
+        self.execute_block(stmt.statements, block_env)
     }
 
     fn visit_print_stmt(&mut self, stmt: PrintStatement) -> Result<()> {
@@ -64,10 +109,15 @@ impl Interpreter {
         Ok(())
     }
 
+    fn visit_return_stmt(&mut self, stmt: ReturnStatement) -> Result<()> {
+        let value = self.evaluate(stmt.value)?;
+        Err(SyntaxError::Return(value))
+    }
+
     fn visit_var_stmt(&mut self, stmt: VarStatement) -> Result<()> {
         let value = match stmt.initializer {
             Some(expr) => self.evaluate(expr)?,
-            None => Object::NIL(()),
+            None => Obj::Nil,
         };
 
         self.environment
@@ -78,6 +128,15 @@ impl Interpreter {
 
     fn visit_expression_stmt(&mut self, stmt: ExpressionStatement) -> Result<()> {
         self.evaluate(stmt.expression)?;
+        Ok(())
+    }
+
+    fn visit_function_stmt(&mut self, stmt: FunctionStatement) -> Result<()> {
+        let fu_name = stmt.name.lexeme.clone();
+        let function = LoxFunction::new(stmt, Some(self.environment.clone()));
+        self.environment
+            .borrow_mut()
+            .define(fu_name, Obj::Function(function));
         Ok(())
     }
 
@@ -97,7 +156,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn visit_assign_expr(&mut self, expr: AssignExpression) -> Result<Object> {
+    fn visit_assign_expr(&mut self, expr: AssignExpression) -> Result<Obj> {
         let value = self.evaluate(expr.value)?;
         let old_value = self
             .environment
@@ -109,11 +168,16 @@ impl Interpreter {
         }
     }
 
-    fn visit_literal_expr(&self, expr: LiteralExpression) -> Result<Object> {
-        Ok(expr.value)
+    fn visit_literal_expr(&self, expr: LiteralExpression) -> Result<Obj> {
+        match expr.value {
+            Literal::Str(str) => Ok(Obj::Str(str)),
+            Literal::Bool(b) => Ok(Obj::Bool(b)),
+            Literal::Num(n) => Ok(Obj::Num(n)),
+            Literal::Nil(_) => Ok(Obj::Nil),
+        }
     }
 
-    fn visit_logical_expr(&mut self, expr: BinaryExpression) -> Result<Object> {
+    fn visit_logical_expr(&mut self, expr: BinaryExpression) -> Result<Obj> {
         let left = self.evaluate(expr.left)?;
         let left_is_truthy = Self::is_truthy(left.clone());
 
@@ -130,66 +194,66 @@ impl Interpreter {
         self.evaluate(expr.right)
     }
 
-    fn visit_grouping_expr(&mut self, expr: GroupingExpression) -> Result<Object> {
+    fn visit_grouping_expr(&mut self, expr: GroupingExpression) -> Result<Obj> {
         self.evaluate(expr.expression)
     }
 
-    fn visit_unary_expr(&mut self, expr: UnaryExpression) -> Result<Object> {
+    fn visit_unary_expr(&mut self, expr: UnaryExpression) -> Result<Obj> {
         let right = self.evaluate(expr.right)?;
 
         match expr.op.kind {
-            Kind::BANG => Ok(Object::BOOL(!Self::is_truthy(right))),
+            Kind::BANG => Ok(Obj::Bool(!Self::is_truthy(right))),
             Kind::MINUS => match right {
-                Object::NUMBER(n) => Ok(Object::NUMBER(-n)),
+                Obj::Num(n) => Ok(Obj::Num(-n)),
                 _ => Err(Self::runtime_error(expr.op, "Operand must be a number")),
             },
             // Unreachable.
-            _ => Ok(Object::NIL(())),
+            _ => Ok(Obj::Nil),
         }
     }
 
-    fn visit_var_expr(&self, expr: VariableExpression) -> Result<Object> {
+    fn visit_var_expr(&self, expr: VariableExpression) -> Result<Obj> {
         match self.environment.borrow().get(&expr.name.lexeme) {
             Some(value) => Ok(value.clone()),
             None => Err(Self::runtime_error(expr.name, "Undefined variable")),
         }
     }
 
-    fn visit_binary_expr(&mut self, expr: BinaryExpression) -> Result<Object> {
+    fn visit_binary_expr(&mut self, expr: BinaryExpression) -> Result<Obj> {
         let left = self.evaluate(expr.left)?;
         let right = self.evaluate(expr.right)?;
         let lexeme = expr.op.lexeme.clone();
 
         match (left, right) {
-            (Object::NUMBER(l), Object::NUMBER(r)) => match expr.op.kind {
-                Kind::MINUS => Ok(Object::NUMBER(l - r)),
-                Kind::SLASH => Ok(Object::NUMBER(l / r)),
-                Kind::STAR => Ok(Object::NUMBER(l * r)),
-                Kind::PLUS => Ok(Object::NUMBER(l + r)),
-                Kind::GREATER => Ok(Object::BOOL(l > r)),
-                Kind::GREATER_EQUAL => Ok(Object::BOOL(l >= r)),
-                Kind::LESS => Ok(Object::BOOL(l < r)),
-                Kind::LESS_EQUAL => Ok(Object::BOOL(l <= r)),
-                Kind::BANG_EQUAL => Ok(Object::BOOL(l != r)),
-                Kind::EQUAL_EQUAL => Ok(Object::BOOL(l == r)),
+            (Obj::Num(l), Obj::Num(r)) => match expr.op.kind {
+                Kind::MINUS => Ok(Obj::Num(l - r)),
+                Kind::SLASH => Ok(Obj::Num(l / r)),
+                Kind::STAR => Ok(Obj::Num(l * r)),
+                Kind::PLUS => Ok(Obj::Num(l + r)),
+                Kind::GREATER => Ok(Obj::Bool(l > r)),
+                Kind::GREATER_EQUAL => Ok(Obj::Bool(l >= r)),
+                Kind::LESS => Ok(Obj::Bool(l < r)),
+                Kind::LESS_EQUAL => Ok(Obj::Bool(l <= r)),
+                Kind::BANG_EQUAL => Ok(Obj::Bool(l != r)),
+                Kind::EQUAL_EQUAL => Ok(Obj::Bool(l == r)),
                 // Unreachable.
                 _ => Err(Self::runtime_error(
                     expr.op,
                     &format!("mismatched types for binary operator {l} {lexeme} {r}"),
                 )),
             },
-            (Object::STRING(l), Object::STRING(r)) => match expr.op.kind {
-                Kind::PLUS => Ok(Object::STRING(format!("{}{}", l, r))),
-                Kind::BANG_EQUAL => Ok(Object::BOOL(l.ne(&r))),
-                Kind::EQUAL_EQUAL => Ok(Object::BOOL(l.eq(&r))),
+            (Obj::Str(l), Obj::Str(r)) => match expr.op.kind {
+                Kind::PLUS => Ok(Obj::Str(format!("{}{}", l, r))),
+                Kind::BANG_EQUAL => Ok(Obj::Bool(l.ne(&r))),
+                Kind::EQUAL_EQUAL => Ok(Obj::Bool(l.eq(&r))),
                 _ => Err(Self::runtime_error(
                     expr.op,
                     &format!("mismatched types for binary operator {l} {lexeme} {r}"),
                 )),
             },
             (l, r) => match expr.op.kind {
-                Kind::BANG_EQUAL => Ok(Object::BOOL(!self.is_equal(l, r))),
-                Kind::EQUAL_EQUAL => Ok(Object::BOOL(self.is_equal(l, r))),
+                Kind::BANG_EQUAL => Ok(Obj::Bool(!self.is_equal(l, r))),
+                Kind::EQUAL_EQUAL => Ok(Obj::Bool(self.is_equal(l, r))),
                 // Unreachable.
                 _ => Err(Self::runtime_error(
                     expr.op,
@@ -197,6 +261,38 @@ impl Interpreter {
                 )),
             },
         }
+    }
+
+    fn visit_call_expr(&mut self, expr: CallExpression) -> Result<Obj> {
+        let callee = self.evaluate(expr.callee)?;
+
+        let mut arguments: Vec<Obj> = Vec::new();
+        for argument in expr.arguments {
+            arguments.push(self.evaluate(argument)?);
+        }
+
+        let function = match callee {
+            Obj::Function(callable) => callable,
+            _ => {
+                return Err(Self::runtime_error(
+                    expr.paren,
+                    "Can only call functions and classes.",
+                ))
+            }
+        };
+
+        if arguments.len() != function.arity() {
+            return Err(Self::runtime_error(
+                expr.paren,
+                &format!(
+                    "Expected {} arguments but got {}",
+                    function.arity(),
+                    arguments.len()
+                ),
+            ));
+        }
+
+        Ok(function.call(self, arguments)?)
     }
 
     fn runtime_error(token: Token, message: &str) -> SyntaxError {
@@ -207,19 +303,19 @@ impl Interpreter {
         SyntaxError::RuntimeError(message.to_string())
     }
 
-    fn is_equal(&self, a: Object, b: Object) -> bool {
+    fn is_equal(&self, a: Obj, b: Obj) -> bool {
         match (a, b) {
-            (Object::NIL(()), Object::NIL(())) => true,
-            (Object::NIL(()), _) => false,
-            (_, Object::NIL(())) => false,
-            (Object::NUMBER(a), Object::NUMBER(b)) => a == b,
-            (Object::STRING(a), Object::STRING(b)) => a == b,
-            (Object::BOOL(a), Object::BOOL(b)) => a == b,
+            (Obj::Nil, Obj::Nil) => true,
+            (Obj::Nil, _) => false,
+            (_, Obj::Nil) => false,
+            (Obj::Num(a), Obj::Num(b)) => a == b,
+            (Obj::Str(a), Obj::Str(b)) => a == b,
+            (Obj::Bool(a), Obj::Bool(b)) => a == b,
             _ => false,
         }
     }
 
-    fn evaluate(&mut self, expr: Expr) -> Result<Object> {
+    fn evaluate(&mut self, expr: Expr) -> Result<Obj> {
         match expr {
             Expr::Literal(literal) => self.visit_literal_expr(*literal),
             Expr::Grouping(grouping) => self.visit_grouping_expr(*grouping),
@@ -228,21 +324,22 @@ impl Interpreter {
             Expr::Variable(variable) => self.visit_var_expr(*variable),
             Expr::Assign(assign) => self.visit_assign_expr(*assign),
             Expr::Logical(logical) => self.visit_logical_expr(*logical),
+            Expr::Call(call) => self.visit_call_expr(*call),
         }
     }
 
-    fn is_truthy(value: Object) -> bool {
+    fn is_truthy(value: Obj) -> bool {
         match value {
-            Object::BOOL(b) => b,
-            Object::NIL(()) => false,
+            Obj::Bool(b) => b,
+            Obj::Nil => false,
             _ => true,
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
-    values: HashMap<String, Object>,
+    values: HashMap<String, Obj>,
     parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -261,11 +358,11 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: String, value: Object) {
+    pub fn define(&mut self, name: String, value: Obj) {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: &str) -> Option<Object> {
+    pub fn get(&self, name: &str) -> Option<Obj> {
         if let Some(value) = self.values.get(name) {
             return Some(value.clone());
         }
@@ -276,7 +373,7 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, name: &str, value: Object) -> Option<Object> {
+    pub fn assign(&mut self, name: &str, value: Obj) -> Option<Obj> {
         if self.values.contains_key(name) {
             self.values.insert(name.to_string(), value)
         } else {

@@ -1,3 +1,4 @@
+use crate::object::Obj;
 use crate::token::{Kind, Token};
 use colored::Colorize;
 use thiserror::Error;
@@ -10,6 +11,8 @@ pub enum SyntaxError {
     ParserError(String),
     #[error("runtime error: {0}")]
     RuntimeError(String),
+    #[error("runtime return value via throw error: {0}")]
+    Return(Obj),
 }
 
 pub struct Reporter {
