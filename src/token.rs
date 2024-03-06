@@ -9,6 +9,12 @@ pub struct Token {
     pub lexeme: String,
 }
 
+impl Token {
+    pub fn new(kind: Kind, lexeme: String, line: usize) -> Self {
+        Self { kind, lexeme, line }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub enum Kind {
     // Single-character tokens.

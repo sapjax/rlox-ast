@@ -293,7 +293,11 @@ impl Parser {
 
             if let Expr::Variable(v) = expr {
                 let name = v.name;
-                return Ok(Expr::Assign(Box::new(AssignExpression { name, value })));
+                return Ok(Expr::Assign(Box::new(AssignExpression {
+                    name,
+                    value,
+                    distance: None,
+                })));
             }
 
             self.error(equals, "Invalid assignment target.");
@@ -475,6 +479,7 @@ impl Parser {
         if self._match(&[Kind::IDENTIFIER]) {
             return Ok(Expr::Variable(Box::new(VariableExpression {
                 name: self.previous(),
+                distance: None,
             })));
         }
 

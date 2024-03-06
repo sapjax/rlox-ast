@@ -118,12 +118,14 @@ pub struct GroupingExpression {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VariableExpression {
     pub name: Token,
+    pub distance: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AssignExpression {
     pub name: Token,
     pub value: Expr,
+    pub distance: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -28,7 +28,11 @@ impl std::fmt::Display for Obj {
 
 pub trait LoxCallable {
     fn arity(&self) -> usize;
-    fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Obj>) -> Result<Obj, SyntaxError>;
+    fn call(
+        &mut self,
+        interpreter: &mut Interpreter,
+        arguments: Vec<Obj>,
+    ) -> Result<Obj, SyntaxError>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,12 +55,20 @@ impl LoxCallable for LoxFunction {
         self.declaration.params.len()
     }
 
-    fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Obj>) -> Result<Obj, SyntaxError> {
-        let mut environment: Environment = Environment::new_child(&self.closure.clone().unwrap());
+    fn call(
+        &mut self,
+        interpreter: &mut Interpreter,
+        arguments: Vec<Obj>,
+    ) -> Result<Obj, SyntaxError> {
+        let closure = match &self.closure {
+            Some(c) => &c,
+            None => &interpreter.globals,
+        };
+        let mut environment: Environment = Environment::new_child(closure);
         for (i, param) in self.declaration.params.iter().enumerate() {
-            environment.define(param.lexeme.clone(), arguments[i].clone());
+            environment.define(param.clone(), arguments[i].clone());
         }
-        let result = interpreter.execute_block(self.declaration.body.clone(), environment);
+        let result = interpreter.execute_block(&mut self.declaration.body, environment);
         match result {
             Err(SyntaxError::Return(v)) => return Ok(v),
             Err(e) => return Err(e),

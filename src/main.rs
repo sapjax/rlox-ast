@@ -10,6 +10,7 @@ mod lexer;
 mod object;
 mod parser;
 mod reporter;
+mod resolver;
 mod token;
 
 fn main() {
@@ -53,12 +54,16 @@ fn run(source: &str, is_repl: bool) {
     let mut parser = parser::Parser::new(tokens, parser_reporter);
     let statements = parser.parse();
     match statements {
-        Ok(stmts) => {
+        Ok(mut stmts) => {
             let ast_json = serde_json::to_string_pretty(&stmts).unwrap();
             println!("{}", ast_json);
 
-            let mut interpreter = interpreter::Interpreter::new();
-            let value = interpreter.interpret(stmts);
+            let resolver_reporter = reporter::Reporter::new();
+            let mut resolver = resolver::Resolver::new(resolver_reporter);
+            resolver.resolve_stmts(&mut stmts);
+
+            let mut interpreter = interpreter::Interpreter::new(resolver);
+            let value = interpreter.interpret(&mut stmts);
             match value {
                 Ok(value) => {
                     println!("{} {:?}", "==>".blue(), value);
