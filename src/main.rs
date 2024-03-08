@@ -60,7 +60,11 @@ fn run(source: &str, is_repl: bool) {
 
             let resolver_reporter = reporter::Reporter::new();
             let mut resolver = resolver::Resolver::new(resolver_reporter);
-            resolver.resolve_stmts(&mut stmts);
+            let resolve_had_error = resolver.resolve_stmts(&mut stmts);
+
+            if resolve_had_error {
+                return exit(65, is_repl);
+            }
 
             let mut interpreter = interpreter::Interpreter::new(resolver);
             let value = interpreter.interpret(&mut stmts);

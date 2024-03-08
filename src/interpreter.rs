@@ -43,6 +43,7 @@ impl Interpreter {
                     }))],
                 },
                 None,
+                false,
             );
 
             globals.borrow_mut().define(token, Obj::Function(clock_fn));
@@ -72,6 +73,7 @@ impl Interpreter {
             Stmt::While(while_stmt) => self.visit_while_stmt(while_stmt),
             Stmt::Function(function) => self.visit_function_stmt(*function.clone()), // TODO: use mutable reference
             Stmt::Return(return_stmt) => self.visit_return_stmt(return_stmt),
+            Stmt::Class(class) => self.visit_class_stmt(class),
         }
     }
 
@@ -99,6 +101,31 @@ impl Interpreter {
     fn visit_block_stmt(&mut self, stmt: &mut BlockStatement) -> Result<()> {
         let block_env = Environment::new_child(&self.environment.clone());
         self.execute_block(&mut stmt.statements, block_env)
+    }
+
+    fn visit_class_stmt(&mut self, stmt: &mut ClassStatement) -> Result<()> {
+        let class_name = stmt.name.clone();
+
+        self.environment
+            .borrow_mut()
+            .define(class_name.clone(), Obj::Nil);
+
+        let mut methods: HashMap<String, LoxFunction> = HashMap::new();
+        for method in &mut stmt.methods {
+            let function = LoxFunction::new(
+                method.clone(),
+                Some(self.environment.clone()),
+                method.name.lexeme == "init",
+            );
+            methods.insert(method.name.lexeme.clone(), function);
+        }
+
+        let class = LoxClass::new(class_name.clone(), methods);
+        self.environment
+            .borrow_mut()
+            .assign(class_name.clone(), Obj::Class(class));
+
+        Ok(())
     }
 
     fn visit_print_stmt(&mut self, stmt: &mut PrintStatement) -> Result<()> {
@@ -131,7 +158,7 @@ impl Interpreter {
 
     fn visit_function_stmt(&mut self, stmt: FunctionStatement) -> Result<()> {
         let fu_name = stmt.name.clone();
-        let function = LoxFunction::new(stmt, Some(self.environment.clone()));
+        let function = LoxFunction::new(stmt, Some(self.environment.clone()), false);
         self.environment
             .borrow_mut()
             .define(fu_name, Obj::Function(function));
@@ -291,8 +318,9 @@ impl Interpreter {
             arguments.push(self.evaluate(argument)?);
         }
 
-        let mut function = match callee {
-            Obj::Function(callable) => callable,
+        let mut function: Box<dyn LoxCallable> = match callee {
+            Obj::Function(callable) => Box::new(callable),
+            Obj::Class(callable) => Box::new(callable),
             _ => {
                 return Err(Self::runtime_error(
                     expr.paren.clone(),
@@ -313,6 +341,36 @@ impl Interpreter {
         }
 
         Ok(function.call(self, arguments)?)
+    }
+
+    fn visit_get_expr(&mut self, expr: &mut GetExpression) -> Result<Obj> {
+        let object = self.evaluate(&mut expr.object)?;
+        match object {
+            Obj::Instance(instance) => instance.get(expr.name.clone()),
+            _ => Err(Self::runtime_error(
+                expr.name.clone(),
+                "Only instances have properties",
+            )),
+        }
+    }
+
+    fn visit_set_expr(&mut self, expr: &mut SetExpression) -> Result<Obj> {
+        let object = self.evaluate(&mut expr.object)?;
+        match object {
+            Obj::Instance(mut instance) => {
+                let value = self.evaluate(&mut expr.value)?;
+                instance.set(expr.name.clone(), value.clone());
+                Ok(value)
+            }
+            _ => Err(Self::runtime_error(
+                expr.name.clone(),
+                "Only instances have fields",
+            )),
+        }
+    }
+
+    fn visit_this_expr(&mut self, expr: &mut ThisExpression) -> Result<Obj> {
+        self.lookup_variable(expr)
     }
 
     fn runtime_error(token: Token, message: &str) -> SyntaxError {
@@ -345,6 +403,9 @@ impl Interpreter {
             Expr::Assign(assign) => self.visit_assign_expr(assign),
             Expr::Logical(logical) => self.visit_logical_expr(logical),
             Expr::Call(call) => self.visit_call_expr(call),
+            Expr::Get(get) => self.visit_get_expr(get),
+            Expr::Set(set) => self.visit_set_expr(set),
+            Expr::This(this) => self.visit_this_expr(this),
         }
     }
 

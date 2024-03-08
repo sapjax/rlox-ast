@@ -9,12 +9,21 @@ type Scope = HashMap<String, bool>;
 enum FunctionType {
     None,
     Function,
+    INITIALIZER,
+    METHOD,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
 }
 
 pub struct Resolver {
     scopes: Vec<Scope>,
     reporter: Reporter,
     fn_type: FunctionType,
+    class_type: ClassType,
 }
 
 impl Resolver {
@@ -23,13 +32,15 @@ impl Resolver {
             scopes: vec![Scope::new()],
             reporter,
             fn_type: FunctionType::None,
+            class_type: ClassType::None,
         }
     }
 
-    pub fn resolve_stmts(&mut self, stmts: &mut Vec<Stmt>) {
+    pub fn resolve_stmts(&mut self, stmts: &mut Vec<Stmt>) -> bool {
         for stmt in stmts {
             self.resolve_stmt(stmt);
         }
+        self.reporter.had_error
     }
 
     fn resolve_stmt(&mut self, stmt: &mut Stmt) {
@@ -42,6 +53,7 @@ impl Resolver {
             Stmt::Return(stmt) => self.visit_return_stmt(stmt),
             Stmt::Var(stmt) => self.visit_var_stmt(stmt),
             Stmt::While(stmt) => self.visit_while_stmt(stmt),
+            Stmt::Class(stmt) => self.visit_class_stmt(stmt),
         }
     }
 
@@ -55,6 +67,9 @@ impl Resolver {
             Expr::Literal(expr) => self.visit_literal_expr(expr),
             Expr::Logical(expr) => self.visit_logical_expr(expr),
             Expr::Unary(expr) => self.visit_unary_expr(expr),
+            Expr::Get(expr) => self.visit_get_expr(expr),
+            Expr::Set(expr) => self.visit_set_expr(expr),
+            Expr::This(expr) => self.visit_this_expr(expr),
         }
     }
 
@@ -62,6 +77,29 @@ impl Resolver {
         self.begin_scope();
         self.resolve_stmts(stmts);
         self.end_scope();
+    }
+
+    fn visit_class_stmt(&mut self, stmt: &mut ClassStatement) {
+        let enclosing_class_type = self.class_type;
+        self.class_type = ClassType::Class;
+
+        self.declare(stmt.name.clone());
+        self.define(stmt.name.clone());
+
+        self.begin_scope();
+        let scope = self.scopes.last_mut().unwrap();
+        scope.insert("this".to_string(), true);
+
+        for method in &mut stmt.methods {
+            let fn_type = if method.name.lexeme == "init" {
+                FunctionType::INITIALIZER
+            } else {
+                FunctionType::METHOD
+            };
+            self.resolve_fn_stmt(method, fn_type)
+        }
+        self.end_scope();
+        self.class_type = enclosing_class_type;
     }
 
     fn visit_expression_stmt(&mut self, expr: &mut ExpressionStatement) {
@@ -90,6 +128,17 @@ impl Resolver {
         if self.fn_type == FunctionType::None {
             self.reporter
                 .error(stmt.keyword.line, "Cannot return from top-level code");
+        }
+
+        if let Expr::Literal(literal) = &stmt.value {
+            if Literal::Nil(()) != literal.value {
+                if self.fn_type == FunctionType::INITIALIZER {
+                    self.reporter.error(
+                        stmt.keyword.line,
+                        "Cannot return a value from an initializer",
+                    );
+                };
+            }
         }
 
         self.resolve_expr(&mut stmt.value);
@@ -126,7 +175,7 @@ impl Resolver {
 
     fn visit_assign_expr(&mut self, expr: &mut AssignExpression) {
         self.resolve_expr(&mut expr.value);
-        self.resolve_local(&mut *expr);
+        self.resolve_local(expr);
     }
 
     fn visit_binary_expr(&mut self, expr: &mut BinaryExpression) {
@@ -139,6 +188,24 @@ impl Resolver {
         for arg in &mut expr.arguments {
             self.resolve_expr(arg);
         }
+    }
+
+    fn visit_get_expr(&mut self, expr: &mut GetExpression) {
+        self.resolve_expr(&mut expr.object);
+    }
+
+    fn visit_set_expr(&mut self, expr: &mut SetExpression) {
+        self.resolve_expr(&mut expr.value);
+        self.resolve_expr(&mut expr.object);
+    }
+
+    fn visit_this_expr(&mut self, expr: &mut ThisExpression) {
+        if self.class_type == ClassType::None {
+            self.reporter
+                .error(expr.keyword.line, "Cannot use 'this' outside of a class");
+        }
+
+        self.resolve_local(expr);
     }
 
     fn visit_grouping_expr(&mut self, expr: &mut GroupingExpression) {
@@ -235,6 +302,20 @@ impl Resolvable for AssignExpression {
 impl Resolvable for VariableExpression {
     fn name(&self) -> &Token {
         &self.name
+    }
+
+    fn set_distance(&mut self, distance: usize) {
+        self.distance = Some(distance);
+    }
+
+    fn get_distance(&self) -> Option<usize> {
+        self.distance
+    }
+}
+
+impl Resolvable for ThisExpression {
+    fn name(&self) -> &Token {
+        &self.keyword
     }
 
     fn set_distance(&mut self, distance: usize) {

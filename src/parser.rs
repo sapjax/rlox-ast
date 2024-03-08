@@ -3,12 +3,16 @@
 ==================== Grammar ====================
 program        → declaration* EOF ;
 
-declaration    → funDecl
+declaration    → classDecl
+               | funDecl
                | varDecl
                | statement ;
 
+classDecl      → "class" IDENTIFIER "{" function* "}" ;
+
 funDecl        → "fun" function ;
 function       → IDENTIFIER "(" parameters? ")" block ;
+parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
 
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
@@ -37,7 +41,7 @@ exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
 
 expression     → assignment ;
-assignment     → IDENTIFIER "=" assignment
+assignment     → ( call "." )? IDENTIFIER "=" assignment
                | logic_or ;
 logic_or       → logic_and ( "or" logic_and )* ;
 logic_and      → equality ( "and" equality )* ;
@@ -46,7 +50,7 @@ comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary | call ;
-call           → primary ( "(" arguments? ")" )* ;
+call           → primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
 primary        → "true" | "false" | "nil"
                | NUMBER | STRING
                | "(" expression ")"
@@ -90,6 +94,9 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Stmt> {
+        if self._match(&[Kind::CLASS]) {
+            return self.class_declaration();
+        }
         if self._match(&[Kind::FUN]) {
             return self.function("function");
         }
@@ -98,6 +105,24 @@ impl Parser {
         } else {
             self.statement()
         }
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt> {
+        let name = self.consume(Kind::IDENTIFIER, "Expect class name.")?;
+        self.consume(Kind::LEFT_BRACE, "Expect '{' before class body.")?;
+
+        let mut methods: Vec<FunctionStatement> = Vec::new();
+        loop {
+            if self.check(&Kind::RIGHT_BRACE) || self.is_at_end() {
+                break;
+            }
+            let function = self.function("method")?;
+            if let Stmt::Function(f) = function {
+                methods.push(*f);
+            }
+        }
+        self.consume(Kind::RIGHT_BRACE, "Expect '}' after class body.")?;
+        Ok(Stmt::Class(Box::new(ClassStatement { name, methods })))
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
@@ -291,16 +316,26 @@ impl Parser {
             let equals = self.previous();
             let value = self.assignment()?;
 
-            if let Expr::Variable(v) = expr {
-                let name = v.name;
-                return Ok(Expr::Assign(Box::new(AssignExpression {
-                    name,
-                    value,
-                    distance: None,
-                })));
+            match expr {
+                Expr::Variable(v) => {
+                    let name = v.name;
+                    return Ok(Expr::Assign(Box::new(AssignExpression {
+                        name,
+                        value,
+                        distance: None,
+                    })));
+                }
+                Expr::Get(g) => {
+                    let object = g.object;
+                    let name = g.name;
+                    return Ok(Expr::Set(Box::new(SetExpression {
+                        object,
+                        name,
+                        value,
+                    })));
+                }
+                _ => return Err(self.error(equals, "Invalid assignment target.")),
             }
-
-            self.error(equals, "Invalid assignment target.");
         }
 
         Ok(expr)
@@ -416,6 +451,9 @@ impl Parser {
         loop {
             if self._match(&[Kind::LEFT_PAREN]) {
                 expr = self.finish_call(expr)?;
+            } else if self._match(&[Kind::DOT]) {
+                let name = self.consume(Kind::IDENTIFIER, "Expect property name after '.'.")?;
+                expr = Expr::Get(Box::new(GetExpression { object: expr, name }));
             } else {
                 break;
             }
@@ -473,6 +511,13 @@ impl Parser {
         if self._match(&[Kind::STRING]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
                 value: Literal::Str(self.previous().lexeme),
+            })));
+        }
+
+        if self._match(&[Kind::THIS]) {
+            return Ok(Expr::This(Box::new(ThisExpression {
+                keyword: self.previous(),
+                distance: None,
             })));
         }
 

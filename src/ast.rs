@@ -15,6 +15,9 @@ binary         → expression operator expression ;
 call           → expression "(" arguments? ")" ;
 logical        → expression ( "and" | "or" ) expression ;
 variable       → IDENTIFIER ;
+get            → expression "." IDENTIFIER ;
+set            → expression "." IDENTIFIER "=" expression ;
+this           → "this" ;
 
 assignment     → IDENTIFIER "=" assignment
 operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
@@ -29,6 +32,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Stmt {
     Block(Box<BlockStatement>),
+    Class(Box<ClassStatement>),
     Expression(Box<ExpressionStatement>),
     Function(Box<FunctionStatement>),
     If(Box<IfStatement>),
@@ -41,6 +45,12 @@ pub enum Stmt {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExpressionStatement {
     pub expression: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClassStatement {
+    pub name: Token,
+    pub methods: Vec<FunctionStatement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -95,6 +105,9 @@ pub enum Expr {
     Variable(Box<VariableExpression>),
     Assign(Box<AssignExpression>),
     Call(Box<CallExpression>),
+    Get(Box<GetExpression>),
+    Set(Box<SetExpression>),
+    This(Box<ThisExpression>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -133,6 +146,25 @@ pub struct CallExpression {
     pub callee: Expr,
     pub paren: Token,
     pub arguments: Vec<Expr>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GetExpression {
+    pub object: Expr,
+    pub name: Token,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SetExpression {
+    pub object: Expr,
+    pub name: Token,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThisExpression {
+    pub keyword: Token,
+    pub distance: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -180,6 +212,15 @@ impl std::fmt::Display for Expr {
                         .collect::<Vec<String>>()
                         .join(", ")
                 )
+            }
+            Expr::Get(get) => {
+                write!(f, "({} . {})", get.object, get.name.lexeme)
+            }
+            Expr::Set(set) => {
+                write!(f, "({} . {} = {})", set.object, set.name.lexeme, set.value)
+            }
+            Expr::This(this) => {
+                write!(f, "{}", this.keyword.lexeme)
             }
         }
     }

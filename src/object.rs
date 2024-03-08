@@ -1,7 +1,9 @@
 use crate::ast::FunctionStatement;
 use crate::interpreter::{Environment, Interpreter};
 use crate::reporter::SyntaxError;
+use crate::token::{Kind, Token};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 // runtime object
@@ -12,6 +14,8 @@ pub enum Obj {
     Num(f64),
     Str(String),
     Function(LoxFunction),
+    Class(LoxClass),
+    Instance(LoxInstance),
 }
 
 impl std::fmt::Display for Obj {
@@ -22,6 +26,8 @@ impl std::fmt::Display for Obj {
             Obj::Num(value) => write!(f, "{}", value),
             Obj::Nil => write!(f, "nil"),
             Obj::Function(func) => write!(f, "{}", func),
+            Obj::Class(class) => write!(f, "{}", class),
+            Obj::Instance(instance) => write!(f, "{}", instance),
         }
     }
 }
@@ -39,13 +45,32 @@ pub trait LoxCallable {
 pub struct LoxFunction {
     pub declaration: FunctionStatement,
     pub closure: Option<Rc<RefCell<Environment>>>,
+    is_initializer: bool,
 }
 
 impl LoxFunction {
-    pub fn new(declaration: FunctionStatement, closure: Option<Rc<RefCell<Environment>>>) -> Self {
+    pub fn new(
+        declaration: FunctionStatement,
+        closure: Option<Rc<RefCell<Environment>>>,
+        is_initializer: bool,
+    ) -> Self {
         Self {
             declaration,
             closure: closure,
+            is_initializer,
+        }
+    }
+
+    pub fn bind(&self, instance: &LoxInstance) -> LoxFunction {
+        let mut environment = Environment::new_child(&self.closure.as_ref().unwrap());
+        environment.define(
+            Token::new(Kind::THIS, "this".to_string(), 0),
+            Obj::Instance(instance.clone()),
+        );
+        LoxFunction {
+            declaration: self.declaration.clone(),
+            closure: Some(Rc::new(RefCell::new(environment))),
+            is_initializer: self.is_initializer,
         }
     }
 }
@@ -64,15 +89,33 @@ impl LoxCallable for LoxFunction {
             Some(c) => &c,
             None => &interpreter.globals,
         };
+
         let mut environment: Environment = Environment::new_child(closure);
         for (i, param) in self.declaration.params.iter().enumerate() {
             environment.define(param.clone(), arguments[i].clone());
         }
         let result = interpreter.execute_block(&mut self.declaration.body, environment);
+
+        let mut default_value = Obj::Nil;
+        if self.is_initializer {
+            default_value = self
+                .closure
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .get_at(0, Token::new(Kind::THIS, "this".to_string(), 0))
+                .unwrap();
+        }
+
         match result {
-            Err(SyntaxError::Return(v)) => return Ok(v),
+            Err(SyntaxError::Return(v)) => {
+                if self.is_initializer {
+                    return Ok(default_value);
+                }
+                return Ok(v);
+            }
             Err(e) => return Err(e),
-            _ => Ok(Obj::Nil),
+            _ => return Ok(default_value),
         }
     }
 }
@@ -80,5 +123,82 @@ impl LoxCallable for LoxFunction {
 impl std::fmt::Display for LoxFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<fn {} >", self.declaration.name.lexeme)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxClass {
+    name: Token,
+    methods: HashMap<String, LoxFunction>,
+}
+
+impl LoxClass {
+    pub fn new(name: Token, methods: HashMap<String, LoxFunction>) -> Self {
+        Self { name, methods }
+    }
+}
+
+impl LoxCallable for LoxClass {
+    fn arity(&self) -> usize {
+        if let Some(initializer) = self.methods.get("init") {
+            return initializer.arity();
+        } else {
+            0
+        }
+    }
+
+    fn call(
+        &mut self,
+        interpreter: &mut Interpreter,
+        arguments: Vec<Obj>,
+    ) -> Result<Obj, SyntaxError> {
+        let instance = LoxInstance {
+            class: self.clone(),
+            fields: HashMap::new(),
+        };
+        if let Some(initializer) = self.methods.get("init") {
+            initializer.bind(&instance).call(interpreter, arguments)?;
+        }
+
+        Ok(Obj::Instance(instance))
+    }
+}
+
+impl std::fmt::Display for LoxClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<class {}>", self.name.lexeme)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxInstance {
+    class: LoxClass,
+    fields: HashMap<String, Obj>,
+}
+
+impl LoxInstance {
+    pub fn get(&self, name: Token) -> Result<Obj, SyntaxError> {
+        if let Some(value) = self.fields.get(&name.lexeme) {
+            return Ok(value.clone());
+        }
+
+        if let Some(method) = self.class.methods.get(&name.lexeme) {
+            return Ok(Obj::Function(method.bind(&self)));
+        }
+
+        Err(SyntaxError::RuntimeError(format!(
+            "Undefined property '{}'.",
+            name.lexeme
+        )))
+    }
+
+    pub fn set(&mut self, name: Token, value: Obj) {
+        self.fields.insert(name.lexeme, value);
+    }
+}
+
+impl std::fmt::Display for LoxInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<instance of {}>", self.class)
     }
 }
