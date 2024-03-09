@@ -15,7 +15,7 @@ pub enum Obj {
     Str(String),
     Function(LoxFunction),
     Class(LoxClass),
-    Instance(LoxInstance),
+    Instance(Rc<RefCell<LoxInstance>>),
 }
 
 impl std::fmt::Display for Obj {
@@ -27,7 +27,7 @@ impl std::fmt::Display for Obj {
             Obj::Nil => write!(f, "nil"),
             Obj::Function(func) => write!(f, "{}", func),
             Obj::Class(class) => write!(f, "{}", class),
-            Obj::Instance(instance) => write!(f, "{}", instance),
+            Obj::Instance(instance) => write!(f, "{}", instance.borrow()),
         }
     }
 }
@@ -61,11 +61,11 @@ impl LoxFunction {
         }
     }
 
-    pub fn bind(&self, instance: &LoxInstance) -> LoxFunction {
+    pub fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
         let mut environment = Environment::new_child(&self.closure.as_ref().unwrap());
         environment.define(
             Token::new(Kind::THIS, "this".to_string(), 0),
-            Obj::Instance(instance.clone()),
+            Obj::Instance(instance),
         );
         LoxFunction {
             declaration: self.declaration.clone(),
@@ -152,12 +152,14 @@ impl LoxCallable for LoxClass {
         interpreter: &mut Interpreter,
         arguments: Vec<Obj>,
     ) -> Result<Obj, SyntaxError> {
-        let instance = LoxInstance {
+        let instance = Rc::new(RefCell::new(LoxInstance {
             class: self.clone(),
             fields: HashMap::new(),
-        };
+        }));
         if let Some(initializer) = self.methods.get("init") {
-            initializer.bind(&instance).call(interpreter, arguments)?;
+            initializer
+                .bind(Rc::clone(&instance))
+                .call(interpreter, arguments)?;
         }
 
         Ok(Obj::Instance(instance))
@@ -177,19 +179,15 @@ pub struct LoxInstance {
 }
 
 impl LoxInstance {
-    pub fn get(&self, name: Token) -> Result<Obj, SyntaxError> {
-        if let Some(value) = self.fields.get(&name.lexeme) {
-            return Ok(value.clone());
+    pub fn get(name: Token, instance: Rc<RefCell<Self>>) -> Option<Obj> {
+        if let Some(value) = instance.borrow().fields.get(&name.lexeme) {
+            return Some(value.clone());
         }
 
-        if let Some(method) = self.class.methods.get(&name.lexeme) {
-            return Ok(Obj::Function(method.bind(&self)));
+        if let Some(method) = instance.borrow().class.methods.get(&name.lexeme) {
+            return Some(Obj::Function(method.bind(Rc::clone(&instance))));
         }
-
-        Err(SyntaxError::RuntimeError(format!(
-            "Undefined property '{}'.",
-            name.lexeme
-        )))
+        None
     }
 
     pub fn set(&mut self, name: Token, value: Obj) {

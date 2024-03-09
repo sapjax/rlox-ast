@@ -346,20 +346,31 @@ impl Interpreter {
     fn visit_get_expr(&mut self, expr: &mut GetExpression) -> Result<Obj> {
         let object = self.evaluate(&mut expr.object)?;
         match object {
-            Obj::Instance(instance) => instance.get(expr.name.clone()),
-            _ => Err(Self::runtime_error(
-                expr.name.clone(),
-                "Only instances have properties",
-            )),
+            Obj::Instance(instance) => {
+                if let Some(value) = LoxInstance::get(expr.name.clone(), instance) {
+                    return Ok(value);
+                } else {
+                    return Err(Self::runtime_error(
+                        expr.name.clone(),
+                        &format!("Undefined property '{}'", expr.name.lexeme),
+                    ));
+                }
+            }
+            _ => {
+                return Err(Self::runtime_error(
+                    expr.name.clone(),
+                    "Only instances have properties",
+                ))
+            }
         }
     }
 
     fn visit_set_expr(&mut self, expr: &mut SetExpression) -> Result<Obj> {
         let object = self.evaluate(&mut expr.object)?;
         match object {
-            Obj::Instance(mut instance) => {
+            Obj::Instance(instance) => {
                 let value = self.evaluate(&mut expr.value)?;
-                instance.set(expr.name.clone(), value.clone());
+                instance.borrow_mut().set(expr.name.clone(), value.clone());
                 Ok(value)
             }
             _ => Err(Self::runtime_error(
