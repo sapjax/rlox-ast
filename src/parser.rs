@@ -8,7 +8,8 @@ declaration    → classDecl
                | varDecl
                | statement ;
 
-classDecl      → "class" IDENTIFIER "{" function* "}" ;
+classDecl      → "class" IDENTIFIER ( "<" IDENTIFIER )?
+                "{" function* "}" ;;
 
 funDecl        → "fun" function ;
 function       → IDENTIFIER "(" parameters? ")" block ;
@@ -51,10 +52,9 @@ term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary | call ;
 call           → primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
-primary        → "true" | "false" | "nil"
-               | NUMBER | STRING
-               | "(" expression ")"
-               | IDENTIFIER ;
+primary        → "true" | "false" | "nil" | "this"
+               | NUMBER | STRING | IDENTIFIER | "(" expression ")"
+               | "super" "." IDENTIFIER ;;
 ==================== Grammar ====================
 
 */
@@ -109,6 +109,17 @@ impl Parser {
 
     fn class_declaration(&mut self) -> Result<Stmt> {
         let name = self.consume(Kind::IDENTIFIER, "Expect class name.")?;
+
+        let superclass = if self._match(&[Kind::LESS]) {
+            self.consume(Kind::IDENTIFIER, "Expect superclass name.")?;
+            Some(Expr::Variable(Box::new(VariableExpression {
+                name: self.previous(),
+                distance: None,
+            })))
+        } else {
+            None
+        };
+
         self.consume(Kind::LEFT_BRACE, "Expect '{' before class body.")?;
 
         let mut methods: Vec<FunctionStatement> = Vec::new();
@@ -122,7 +133,11 @@ impl Parser {
             }
         }
         self.consume(Kind::RIGHT_BRACE, "Expect '}' after class body.")?;
-        Ok(Stmt::Class(Box::new(ClassStatement { name, methods })))
+        Ok(Stmt::Class(Box::new(ClassStatement {
+            name,
+            methods,
+            superclass,
+        })))
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
@@ -511,6 +526,17 @@ impl Parser {
         if self._match(&[Kind::STRING]) {
             return Ok(Expr::Literal(Box::new(LiteralExpression {
                 value: Literal::Str(self.previous().lexeme),
+            })));
+        }
+
+        if self._match(&[Kind::SUPER]) {
+            let keyword = self.previous();
+            self.consume(Kind::DOT, "Expect '.' after 'super'.")?;
+            let method = self.consume(Kind::IDENTIFIER, "Expect superclass method name.")?;
+            return Ok(Expr::Super(Box::new(SuperExpression {
+                keyword,
+                method,
+                distance: None,
             })));
         }
 

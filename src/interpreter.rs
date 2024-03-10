@@ -46,7 +46,9 @@ impl Interpreter {
                 false,
             );
 
-            globals.borrow_mut().define(token, Obj::Function(clock_fn));
+            globals
+                .borrow_mut()
+                .define(token.lexeme, Obj::Function(clock_fn));
         }
 
         Self {
@@ -108,7 +110,23 @@ impl Interpreter {
 
         self.environment
             .borrow_mut()
-            .define(class_name.clone(), Obj::Nil);
+            .define(class_name.lexeme.clone(), Obj::Nil);
+
+        if let Some(superclass_expr) = &mut stmt.superclass {
+            let value = self.evaluate(superclass_expr)?;
+            if let Obj::Class(_lox_class) = &value {
+                self.environment = Rc::new(RefCell::new(Environment::new_child(
+                    &self.environment.clone(),
+                )));
+                self.environment
+                    .borrow_mut()
+                    .define("super".to_string(), value);
+            } else {
+                return Err(SyntaxError::RuntimeError(
+                    "Superclass must be a class.".to_string(),
+                ));
+            }
+        }
 
         let mut methods: HashMap<String, LoxFunction> = HashMap::new();
         for method in &mut stmt.methods {
@@ -120,10 +138,15 @@ impl Interpreter {
             methods.insert(method.name.lexeme.clone(), function);
         }
 
-        let class = LoxClass::new(class_name.clone(), methods);
+        let superclass_obj = self.environment.borrow().get("super".to_string());
+        let superclass = match superclass_obj {
+            Some(Obj::Class(superclass)) => Some(Box::new(superclass)),
+            _ => None,
+        };
+        let class = LoxClass::new(class_name.clone(), superclass, methods);
         self.environment
             .borrow_mut()
-            .assign(class_name.clone(), Obj::Class(class));
+            .assign(class_name.lexeme.clone(), Obj::Class(class));
 
         Ok(())
     }
@@ -147,7 +170,7 @@ impl Interpreter {
 
         self.environment
             .borrow_mut()
-            .define(stmt.name.clone(), value);
+            .define(stmt.name.lexeme.clone(), value);
         Ok(())
     }
 
@@ -161,7 +184,7 @@ impl Interpreter {
         let function = LoxFunction::new(stmt, Some(self.environment.clone()), false);
         self.environment
             .borrow_mut()
-            .define(fu_name, Obj::Function(function));
+            .define(fu_name.lexeme, Obj::Function(function));
         Ok(())
     }
 
@@ -188,11 +211,11 @@ impl Interpreter {
         if let Some(d) = distance {
             self.environment
                 .borrow_mut()
-                .assign_at(d, expr.name.clone(), value.clone());
+                .assign_at(d, expr.name.lexeme.clone(), value.clone());
         } else {
             self.globals
                 .borrow_mut()
-                .assign(expr.name.clone(), value.clone());
+                .assign(expr.name.lexeme.clone(), value.clone());
         }
         Ok(value)
     }
@@ -255,13 +278,13 @@ impl Interpreter {
             return self
                 .environment
                 .borrow()
-                .get_at(d, name.clone())
+                .get_at(d, name.lexeme.clone())
                 .ok_or_else(|| Self::runtime_error(name.clone(), "Undefined variable"));
         } else {
             return self
                 .globals
                 .borrow()
-                .get(name.clone())
+                .get(name.lexeme.clone())
                 .ok_or_else(|| Self::runtime_error(name.clone(), "Undefined variable"));
         }
     }
@@ -380,6 +403,44 @@ impl Interpreter {
         }
     }
 
+    fn visit_super_expr(&mut self, expr: &mut SuperExpression) -> Result<Obj> {
+        let distance = expr.get_distance();
+        let superclass = self
+            .environment
+            .borrow()
+            .get_at(distance.unwrap(), "super".to_string())
+            .ok_or_else(|| Self::runtime_error(expr.keyword.clone(), "Undefined variable"))?;
+
+        let instance: Obj = self
+            .environment
+            .borrow()
+            .get_at(distance.unwrap() - 1, "this".to_string())
+            .ok_or_else(|| Self::runtime_error(expr.keyword.clone(), "Undefined variable"))?;
+
+        match superclass {
+            Obj::Class(superclass) => {
+                let method = superclass.find_method(&expr.method.lexeme).ok_or_else(|| {
+                    Self::runtime_error(
+                        expr.method.clone(),
+                        &format!("Undefined property '{}'", expr.method.lexeme),
+                    )
+                })?;
+
+                match instance {
+                    Obj::Instance(instance) => Ok(Obj::Function(method.bind(Rc::clone(&instance)))),
+                    _ => Err(Self::runtime_error(
+                        expr.keyword.clone(),
+                        "Only instances have superclass",
+                    )),
+                }
+            }
+            _ => Err(Self::runtime_error(
+                expr.keyword.clone(),
+                "Only classes have superclass",
+            )),
+        }
+    }
+
     fn visit_this_expr(&mut self, expr: &mut ThisExpression) -> Result<Obj> {
         self.lookup_variable(expr)
     }
@@ -417,6 +478,7 @@ impl Interpreter {
             Expr::Get(get) => self.visit_get_expr(get),
             Expr::Set(set) => self.visit_set_expr(set),
             Expr::This(this) => self.visit_this_expr(this),
+            Expr::Super(super_expr) => self.visit_super_expr(super_expr),
         }
     }
 
@@ -450,12 +512,12 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: Token, value: Obj) {
-        self.values.insert(name.lexeme, value);
+    pub fn define(&mut self, name: String, value: Obj) {
+        self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: Token) -> Option<Obj> {
-        if let Some(value) = self.values.get(&name.lexeme) {
+    pub fn get(&self, name: String) -> Option<Obj> {
+        if let Some(value) = self.values.get(&name) {
             return Some(value.clone());
         }
 
@@ -465,7 +527,7 @@ impl Environment {
         }
     }
 
-    pub fn get_at(&self, distance: usize, name: Token) -> Option<Obj> {
+    pub fn get_at(&self, distance: usize, name: String) -> Option<Obj> {
         match self.ancestor(distance) {
             Some(e) => e.borrow().get(name),
             None => None,
@@ -480,9 +542,9 @@ impl Environment {
         env
     }
 
-    pub fn assign(&mut self, name: Token, value: Obj) -> Option<Obj> {
-        if self.values.contains_key(&name.lexeme) {
-            self.values.insert(name.lexeme, value)
+    pub fn assign(&mut self, name: String, value: Obj) -> Option<Obj> {
+        if self.values.contains_key(&name) {
+            self.values.insert(name, value)
         } else {
             match &mut self.parent {
                 Some(parent) => parent.borrow_mut().assign(name, value),
@@ -491,7 +553,7 @@ impl Environment {
         }
     }
 
-    pub fn assign_at(&mut self, distance: usize, name: Token, value: Obj) -> Option<Obj> {
+    pub fn assign_at(&mut self, distance: usize, name: String, value: Obj) -> Option<Obj> {
         match self.ancestor(distance) {
             Some(e) => e.borrow_mut().assign(name, value),
             None => None,

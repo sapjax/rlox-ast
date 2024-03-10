@@ -18,6 +18,7 @@ variable       → IDENTIFIER ;
 get            → expression "." IDENTIFIER ;
 set            → expression "." IDENTIFIER "=" expression ;
 this           → "this" ;
+super          → "super" "." IDENTIFIER ;
 
 assignment     → IDENTIFIER "=" assignment
 operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
@@ -50,6 +51,7 @@ pub struct ExpressionStatement {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClassStatement {
     pub name: Token,
+    pub superclass: Option<Expr>,
     pub methods: Vec<FunctionStatement>,
 }
 
@@ -108,6 +110,7 @@ pub enum Expr {
     Get(Box<GetExpression>),
     Set(Box<SetExpression>),
     This(Box<ThisExpression>),
+    Super(Box<SuperExpression>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -168,6 +171,13 @@ pub struct ThisExpression {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SuperExpression {
+    pub keyword: Token,
+    pub method: Token,
+    pub distance: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LiteralExpression {
     pub value: Literal,
 }
@@ -221,6 +231,9 @@ impl std::fmt::Display for Expr {
             }
             Expr::This(this) => {
                 write!(f, "{}", this.keyword.lexeme)
+            }
+            Expr::Super(super_) => {
+                write!(f, "({} . {})", super_.keyword.lexeme, super_.method.lexeme)
             }
         }
     }

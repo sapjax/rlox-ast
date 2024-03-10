@@ -17,6 +17,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    SUBCLASS,
 }
 
 pub struct Resolver {
@@ -70,6 +71,7 @@ impl Resolver {
             Expr::Get(expr) => self.visit_get_expr(expr),
             Expr::Set(expr) => self.visit_set_expr(expr),
             Expr::This(expr) => self.visit_this_expr(expr),
+            Expr::Super(expr) => self.visit_super_expr(expr),
         }
     }
 
@@ -86,6 +88,25 @@ impl Resolver {
         self.declare(stmt.name.clone());
         self.define(stmt.name.clone());
 
+        if let Some(superclass_expr) = &mut stmt.superclass {
+            if let Expr::Variable(superclass) = superclass_expr {
+                if stmt.name.lexeme == superclass.name.lexeme {
+                    self.reporter
+                        .error(superclass.name.line, "A class cannot inherit from itself");
+                }
+            }
+            self.class_type = ClassType::SUBCLASS;
+            self.resolve_expr(superclass_expr);
+        }
+
+        // super
+        if let Some(_superclass_expr) = &stmt.superclass {
+            self.begin_scope();
+            let scope = self.scopes.last_mut().unwrap();
+            scope.insert("super".to_string(), true);
+        }
+
+        // this
         self.begin_scope();
         let scope = self.scopes.last_mut().unwrap();
         scope.insert("this".to_string(), true);
@@ -99,6 +120,11 @@ impl Resolver {
             self.resolve_fn_stmt(method, fn_type)
         }
         self.end_scope();
+
+        if stmt.superclass.is_some() {
+            self.end_scope();
+        }
+
         self.class_type = enclosing_class_type;
     }
 
@@ -197,6 +223,20 @@ impl Resolver {
     fn visit_set_expr(&mut self, expr: &mut SetExpression) {
         self.resolve_expr(&mut expr.value);
         self.resolve_expr(&mut expr.object);
+    }
+
+    fn visit_super_expr(&mut self, expr: &mut SuperExpression) {
+        if self.class_type == ClassType::None {
+            self.reporter
+                .error(expr.keyword.line, "Cannot use 'super' outside of a class");
+        } else if self.class_type != ClassType::SUBCLASS {
+            self.reporter.error(
+                expr.keyword.line,
+                "Cannot use 'super' in a class with no superclass",
+            );
+        }
+
+        self.resolve_local(expr);
     }
 
     fn visit_this_expr(&mut self, expr: &mut ThisExpression) {
@@ -314,6 +354,20 @@ impl Resolvable for VariableExpression {
 }
 
 impl Resolvable for ThisExpression {
+    fn name(&self) -> &Token {
+        &self.keyword
+    }
+
+    fn set_distance(&mut self, distance: usize) {
+        self.distance = Some(distance);
+    }
+
+    fn get_distance(&self) -> Option<usize> {
+        self.distance
+    }
+}
+
+impl Resolvable for SuperExpression {
     fn name(&self) -> &Token {
         &self.keyword
     }

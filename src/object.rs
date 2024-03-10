@@ -1,7 +1,7 @@
 use crate::ast::FunctionStatement;
 use crate::interpreter::{Environment, Interpreter};
 use crate::reporter::SyntaxError;
-use crate::token::{Kind, Token};
+use crate::token::Token;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -56,17 +56,14 @@ impl LoxFunction {
     ) -> Self {
         Self {
             declaration,
-            closure: closure,
+            closure,
             is_initializer,
         }
     }
 
     pub fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
         let mut environment = Environment::new_child(&self.closure.as_ref().unwrap());
-        environment.define(
-            Token::new(Kind::THIS, "this".to_string(), 0),
-            Obj::Instance(instance),
-        );
+        environment.define("this".to_string(), Obj::Instance(instance));
         LoxFunction {
             declaration: self.declaration.clone(),
             closure: Some(Rc::new(RefCell::new(environment))),
@@ -92,7 +89,7 @@ impl LoxCallable for LoxFunction {
 
         let mut environment: Environment = Environment::new_child(closure);
         for (i, param) in self.declaration.params.iter().enumerate() {
-            environment.define(param.clone(), arguments[i].clone());
+            environment.define(param.clone().lexeme, arguments[i].clone());
         }
         let result = interpreter.execute_block(&mut self.declaration.body, environment);
 
@@ -103,7 +100,7 @@ impl LoxCallable for LoxFunction {
                 .as_ref()
                 .unwrap()
                 .borrow()
-                .get_at(0, Token::new(Kind::THIS, "this".to_string(), 0))
+                .get_at(0, "this".to_string())
                 .unwrap();
         }
 
@@ -112,10 +109,10 @@ impl LoxCallable for LoxFunction {
                 if self.is_initializer {
                     return Ok(default_value);
                 }
-                return Ok(v);
+                Ok(v)
             }
-            Err(e) => return Err(e),
-            _ => return Ok(default_value),
+            Err(e) => Err(e),
+            _ => Ok(default_value),
         }
     }
 }
@@ -128,20 +125,40 @@ impl std::fmt::Display for LoxFunction {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct LoxClass {
-    name: Token,
+    pub name: Token,
+    super_class: Option<Box<LoxClass>>,
     methods: HashMap<String, LoxFunction>,
 }
 
 impl LoxClass {
-    pub fn new(name: Token, methods: HashMap<String, LoxFunction>) -> Self {
-        Self { name, methods }
+    pub fn new(
+        name: Token,
+        super_class: Option<Box<LoxClass>>,
+        methods: HashMap<String, LoxFunction>,
+    ) -> Self {
+        Self {
+            name,
+            super_class,
+            methods,
+        }
+    }
+
+    pub fn find_method(&self, name: &str) -> Option<LoxFunction> {
+        if let Some(method) = self.methods.get(name) {
+            return Some(method.clone());
+        }
+
+        if let Some(super_class) = &self.super_class {
+            return super_class.find_method(name);
+        }
+        None
     }
 }
 
 impl LoxCallable for LoxClass {
     fn arity(&self) -> usize {
-        if let Some(initializer) = self.methods.get("init") {
-            return initializer.arity();
+        if let Some(initializer) = self.find_method("init") {
+            initializer.arity()
         } else {
             0
         }
@@ -156,7 +173,7 @@ impl LoxCallable for LoxClass {
             class: self.clone(),
             fields: HashMap::new(),
         }));
-        if let Some(initializer) = self.methods.get("init") {
+        if let Some(initializer) = self.find_method("init") {
             initializer
                 .bind(Rc::clone(&instance))
                 .call(interpreter, arguments)?;
@@ -184,7 +201,7 @@ impl LoxInstance {
             return Some(value.clone());
         }
 
-        if let Some(method) = instance.borrow().class.methods.get(&name.lexeme) {
+        if let Some(method) = instance.borrow().class.find_method(&name.lexeme) {
             return Some(Obj::Function(method.bind(Rc::clone(&instance))));
         }
         None
