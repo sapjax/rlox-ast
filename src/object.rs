@@ -14,6 +14,7 @@ pub enum Obj {
     Num(f64),
     Str(String),
     Function(LoxFunction),
+    NativeFn(NativeFunction),
     Class(LoxClass),
     Instance(Rc<RefCell<LoxInstance>>),
 }
@@ -26,6 +27,7 @@ impl std::fmt::Display for Obj {
             Obj::Num(value) => write!(f, "{}", value),
             Obj::Nil => write!(f, "nil"),
             Obj::Function(func) => write!(f, "{}", func),
+            Obj::NativeFn(native) => write!(f, "<native fn {}>", native.name),
             Obj::Class(class) => write!(f, "{}", class),
             Obj::Instance(instance) => write!(f, "{}", instance.borrow()),
         }
@@ -69,6 +71,37 @@ impl LoxFunction {
             closure: Some(Rc::new(RefCell::new(environment))),
             is_initializer: self.is_initializer,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeFunction {
+    pub name: String,
+    pub arity: usize,
+    pub native_call: fn(Vec<Obj>) -> Obj,
+}
+
+impl NativeFunction {
+    pub fn new(name: String, arity: usize, native_call: fn(Vec<Obj>) -> Obj) -> Self {
+        Self {
+            name,
+            arity,
+            native_call,
+        }
+    }
+}
+
+impl LoxCallable for NativeFunction {
+    fn arity(&self) -> usize {
+        self.arity
+    }
+
+    fn call(
+        &mut self,
+        _interpreter: &mut Interpreter,
+        arguments: Vec<Obj>,
+    ) -> Result<Obj, SyntaxError> {
+        Ok((self.native_call)(arguments))
     }
 }
 

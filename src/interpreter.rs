@@ -25,30 +25,18 @@ impl Interpreter {
 
         // define native fn clock
         {
-            let now = SystemTime::now();
-            let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-            let milliseconds = since_the_epoch.as_millis();
-
             let token = Token::new(Kind::IDENTIFIER, "clock".to_string(), 0);
 
-            let clock_fn = LoxFunction::new(
-                FunctionStatement {
-                    name: token.clone(),
-                    params: vec![],
-                    body: vec![Stmt::Return(Box::new(ReturnStatement {
-                        keyword: Token::new(Kind::RETURN, "return".to_string(), 0),
-                        value: Expr::Literal(Box::new(LiteralExpression {
-                            value: Literal::Num(milliseconds as f64),
-                        })),
-                    }))],
-                },
-                None,
-                false,
-            );
+            let clock_fn = NativeFunction::new("clock".to_string(), 0, |_| {
+                let now = SystemTime::now();
+                let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                let milliseconds = since_the_epoch.as_millis();
+                Obj::Num(milliseconds as f64)
+            });
 
             globals
                 .borrow_mut()
-                .define(token.lexeme, Obj::Function(clock_fn));
+                .define(token.lexeme, Obj::NativeFn(clock_fn));
         }
 
         Self {
@@ -344,6 +332,7 @@ impl Interpreter {
         let mut function: Box<dyn LoxCallable> = match callee {
             Obj::Function(callable) => Box::new(callable),
             Obj::Class(callable) => Box::new(callable),
+            Obj::NativeFn(callable) => Box::new(callable),
             _ => {
                 return Err(Self::runtime_error(
                     expr.paren.clone(),
