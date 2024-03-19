@@ -2,8 +2,9 @@ use crate::ast::*;
 use crate::reporter::Reporter;
 use crate::token::Token;
 use std::collections::HashMap;
+use string_cache::DefaultAtom as Atom;
 
-type Scope = HashMap<String, bool>;
+type Scope = HashMap<Atom, bool>;
 
 #[derive(Clone, Copy, PartialEq)]
 enum FunctionType {
@@ -103,16 +104,16 @@ impl Resolver {
         if let Some(_superclass_expr) = &stmt.superclass {
             self.begin_scope();
             let scope = self.scopes.last_mut().unwrap();
-            scope.insert("super".to_string(), true);
+            scope.insert(Atom::from("super"), true);
         }
 
         // this
         self.begin_scope();
         let scope = self.scopes.last_mut().unwrap();
-        scope.insert("this".to_string(), true);
+        scope.insert(Atom::from("this"), true);
 
         for method in &mut stmt.methods {
-            let fn_type = if method.name.lexeme == "init" {
+            let fn_type = if method.name.lexeme == Atom::from("init") {
                 FunctionType::INITIALIZER
             } else {
                 FunctionType::METHOD

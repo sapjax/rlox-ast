@@ -1,6 +1,7 @@
 use crate::reporter::Reporter;
-use crate::token::{map_keyword, Kind, Token};
+use crate::token::{map_keyword, Kind, Span, Token};
 use std::str::Chars;
+use string_cache::DefaultAtom as Atom;
 
 pub struct Lexer<'a> {
     /// Source Text
@@ -166,7 +167,11 @@ impl<'a> Lexer<'a> {
         let token = Token {
             kind: kind,
             line: self.line,
-            lexeme: String::from(&self.source[self.start..self.current]),
+            lexeme: Atom::from(&self.source[self.start..self.current]),
+            span: Span {
+                start: self.start,
+                end: self.current,
+            },
         };
         self.tokens.push(token);
     }

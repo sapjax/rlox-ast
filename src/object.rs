@@ -5,6 +5,7 @@ use crate::token::Token;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use string_cache::DefaultAtom as Atom;
 
 // runtime object
 #[derive(Debug, PartialEq, Clone)]
@@ -65,7 +66,7 @@ impl LoxFunction {
 
     pub fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
         let mut environment = Environment::new_child(&self.closure.as_ref().unwrap());
-        environment.define("this".to_string(), Obj::Instance(instance));
+        environment.define(Atom::from("this"), Obj::Instance(instance));
         LoxFunction {
             declaration: self.declaration.clone(),
             closure: Some(Rc::new(RefCell::new(environment))),
@@ -122,7 +123,7 @@ impl LoxCallable for LoxFunction {
 
         let mut environment: Environment = Environment::new_child(closure);
         for (i, param) in self.declaration.params.iter().enumerate() {
-            environment.define(param.clone().lexeme, arguments[i].clone());
+            environment.define(param.lexeme.clone(), arguments[i].clone());
         }
         let result = interpreter.execute_block(&mut self.declaration.body, environment);
 
@@ -133,7 +134,7 @@ impl LoxCallable for LoxFunction {
                 .as_ref()
                 .unwrap()
                 .borrow()
-                .get_at(0, "this".to_string())
+                .get_at(0, Atom::from("this"))
                 .unwrap();
         }
 
@@ -160,14 +161,14 @@ impl std::fmt::Display for LoxFunction {
 pub struct LoxClass {
     pub name: Token,
     super_class: Option<Box<LoxClass>>,
-    methods: HashMap<String, LoxFunction>,
+    methods: HashMap<Atom, LoxFunction>,
 }
 
 impl LoxClass {
     pub fn new(
         name: Token,
         super_class: Option<Box<LoxClass>>,
-        methods: HashMap<String, LoxFunction>,
+        methods: HashMap<Atom, LoxFunction>,
     ) -> Self {
         Self {
             name,
@@ -176,8 +177,8 @@ impl LoxClass {
         }
     }
 
-    pub fn find_method(&self, name: &str) -> Option<LoxFunction> {
-        if let Some(method) = self.methods.get(name) {
+    pub fn find_method(&self, name: Atom) -> Option<LoxFunction> {
+        if let Some(method) = self.methods.get(&name) {
             return Some(method.clone());
         }
 
@@ -190,7 +191,7 @@ impl LoxClass {
 
 impl LoxCallable for LoxClass {
     fn arity(&self) -> usize {
-        if let Some(initializer) = self.find_method("init") {
+        if let Some(initializer) = self.find_method(Atom::from("init")) {
             initializer.arity()
         } else {
             0
@@ -206,7 +207,7 @@ impl LoxCallable for LoxClass {
             class: self.clone(),
             fields: HashMap::new(),
         }));
-        if let Some(initializer) = self.find_method("init") {
+        if let Some(initializer) = self.find_method(Atom::from("init")) {
             initializer
                 .bind(Rc::clone(&instance))
                 .call(interpreter, arguments)?;
@@ -225,7 +226,7 @@ impl std::fmt::Display for LoxClass {
 #[derive(Debug, PartialEq, Clone)]
 pub struct LoxInstance {
     class: LoxClass,
-    fields: HashMap<String, Obj>,
+    fields: HashMap<Atom, Obj>,
 }
 
 impl LoxInstance {
@@ -234,7 +235,7 @@ impl LoxInstance {
             return Some(value.clone());
         }
 
-        if let Some(method) = instance.borrow().class.find_method(&name.lexeme) {
+        if let Some(method) = instance.borrow().class.find_method(name.lexeme) {
             return Some(Obj::Function(method.bind(Rc::clone(&instance))));
         }
         None

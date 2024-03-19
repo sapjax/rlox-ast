@@ -1,17 +1,30 @@
 #![allow(non_camel_case_types)]
+use string_cache::DefaultAtom as Atom;
 
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Token {
     pub kind: Kind,
     pub line: usize,
-    pub lexeme: String,
+    pub lexeme: Atom,
+    pub span: Span,
 }
 
 impl Token {
-    pub fn new(kind: Kind, lexeme: String, line: usize) -> Self {
-        Self { kind, lexeme, line }
+    pub fn new(kind: Kind, lexeme: Atom, line: usize) -> Self {
+        Self {
+            kind,
+            lexeme: Atom::from(lexeme),
+            line,
+            span: Span { start: 0, end: 0 },
+        }
     }
 }
 

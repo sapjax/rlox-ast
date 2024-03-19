@@ -29,6 +29,7 @@ operator       → "==" | "!=" | "<" | "<=" | ">" | ">="
 
 use crate::token::Token;
 use serde::{Deserialize, Serialize};
+use string_cache::DefaultAtom as Atom;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Stmt {
@@ -185,7 +186,7 @@ pub struct LiteralExpression {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Literal {
     Bool(bool),
-    Str(String),
+    Str(Atom),
     Num(f64),
     Nil(()),
 }

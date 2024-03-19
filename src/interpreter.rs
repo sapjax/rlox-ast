@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use string_cache::DefaultAtom as Atom;
 
 pub type Result<T> = std::result::Result<T, SyntaxError>;
 
@@ -25,7 +26,7 @@ impl Interpreter {
 
         // define native fn clock
         {
-            let token = Token::new(Kind::IDENTIFIER, "clock".to_string(), 0);
+            let token = Token::new(Kind::IDENTIFIER, Atom::from("clock"), 0);
 
             let clock_fn = NativeFunction::new("clock".to_string(), 0, |_| {
                 let now = SystemTime::now();
@@ -108,7 +109,7 @@ impl Interpreter {
                 )));
                 self.environment
                     .borrow_mut()
-                    .define("super".to_string(), value);
+                    .define(Atom::from("super"), value);
             } else {
                 return Err(SyntaxError::RuntimeError(
                     "Superclass must be a class.".to_string(),
@@ -116,17 +117,17 @@ impl Interpreter {
             }
         }
 
-        let mut methods: HashMap<String, LoxFunction> = HashMap::new();
+        let mut methods: HashMap<Atom, LoxFunction> = HashMap::new();
         for method in &mut stmt.methods {
             let function = LoxFunction::new(
                 method.clone(),
                 Some(self.environment.clone()),
-                method.name.lexeme == "init",
+                method.name.lexeme == Atom::from("init"),
             );
             methods.insert(method.name.lexeme.clone(), function);
         }
 
-        let superclass_obj = self.environment.borrow().get("super".to_string());
+        let superclass_obj = self.environment.borrow().get(Atom::from("super"));
         let superclass = match superclass_obj {
             Some(Obj::Class(superclass)) => Some(Box::new(superclass)),
             _ => None,
@@ -210,7 +211,7 @@ impl Interpreter {
 
     fn visit_literal_expr(&self, expr: &mut LiteralExpression) -> Result<Obj> {
         match &expr.value {
-            Literal::Str(str) => Ok(Obj::Str(str.clone())),
+            Literal::Str(str) => Ok(Obj::Str(str.to_string())), // TODO: use interned string
             Literal::Bool(b) => Ok(Obj::Bool(*b)),
             Literal::Num(n) => Ok(Obj::Num(*n)),
             Literal::Nil(_) => Ok(Obj::Nil),
@@ -397,23 +398,25 @@ impl Interpreter {
         let superclass = self
             .environment
             .borrow()
-            .get_at(distance.unwrap(), "super".to_string())
+            .get_at(distance.unwrap(), Atom::from("super"))
             .ok_or_else(|| Self::runtime_error(expr.keyword.clone(), "Undefined variable"))?;
 
         let instance: Obj = self
             .environment
             .borrow()
-            .get_at(distance.unwrap() - 1, "this".to_string())
+            .get_at(distance.unwrap() - 1, Atom::from("this"))
             .ok_or_else(|| Self::runtime_error(expr.keyword.clone(), "Undefined variable"))?;
 
         match superclass {
             Obj::Class(superclass) => {
-                let method = superclass.find_method(&expr.method.lexeme).ok_or_else(|| {
-                    Self::runtime_error(
-                        expr.method.clone(),
-                        &format!("Undefined property '{}'", expr.method.lexeme),
-                    )
-                })?;
+                let method = superclass
+                    .find_method(expr.method.lexeme.clone())
+                    .ok_or_else(|| {
+                        Self::runtime_error(
+                            expr.method.clone(),
+                            &format!("Undefined property '{}'", expr.method.lexeme),
+                        )
+                    })?;
 
                 match instance {
                     Obj::Instance(instance) => Ok(Obj::Function(method.bind(Rc::clone(&instance)))),
@@ -482,7 +485,7 @@ impl Interpreter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
-    values: HashMap<String, Obj>,
+    values: HashMap<Atom, Obj>,
     parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -501,11 +504,11 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: String, value: Obj) {
+    pub fn define(&mut self, name: Atom, value: Obj) {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: String) -> Option<Obj> {
+    pub fn get(&self, name: Atom) -> Option<Obj> {
         if let Some(value) = self.values.get(&name) {
             return Some(value.clone());
         }
@@ -516,7 +519,7 @@ impl Environment {
         }
     }
 
-    pub fn get_at(&self, distance: usize, name: String) -> Option<Obj> {
+    pub fn get_at(&self, distance: usize, name: Atom) -> Option<Obj> {
         match self.ancestor(distance) {
             Some(e) => e.borrow().get(name),
             None => None,
@@ -531,7 +534,7 @@ impl Environment {
         env
     }
 
-    pub fn assign(&mut self, name: String, value: Obj) -> Option<Obj> {
+    pub fn assign(&mut self, name: Atom, value: Obj) -> Option<Obj> {
         if self.values.contains_key(&name) {
             self.values.insert(name, value)
         } else {
@@ -542,7 +545,7 @@ impl Environment {
         }
     }
 
-    pub fn assign_at(&mut self, distance: usize, name: String, value: Obj) -> Option<Obj> {
+    pub fn assign_at(&mut self, distance: usize, name: Atom, value: Obj) -> Option<Obj> {
         match self.ancestor(distance) {
             Some(e) => e.borrow_mut().assign(name, value),
             None => None,
